@@ -27,6 +27,7 @@ fn request(version: &str, channel: &str, src: &Path) -> PublishRequest {
         args: vec!["--novo".into()],
         notes: format!("Novidades da {version}"),
         replace: false,
+        appearance: Default::default(),
     }
 }
 
@@ -183,7 +184,7 @@ fn keys_testers_publish_link_revoke_rewrap() {
     let pkg = r.package("windows-x64").unwrap();
     let file = out.dir.join("pacotes").join(&pkg.file);
     let code = AccessCode::parse(&carlos.code).unwrap();
-    install::install(&layout, "utsim", r, pkg, &code, &file).unwrap();
+    install::install(&layout, "utsim", r, pkg, Some(&code), &file).unwrap();
     install::activate(&layout, "utsim", "0.3.0").unwrap();
     let (_, args, _) = install::launch_command(&layout, "utsim").unwrap();
     assert_eq!(args, vec!["--novo"]);

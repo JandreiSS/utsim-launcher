@@ -3,9 +3,9 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use utsim_launcher_core::crypto::Argon2Params;
-use utsim_launcher_core::manifest;
+use utsim_launcher_core::manifest::{self, Access};
 use utsim_launcher_core::signature;
-use utsim_publicar::{Output, PublishRequest, Source, Store};
+use utsim_publicar::{Appearance, Output, PublishRequest, Source, Store};
 
 #[derive(Parser)]
 #[command(
@@ -74,6 +74,18 @@ enum Cmd {
         #[arg(long)]
         saida: PathBuf,
     },
+    /// Quem instala um produto num canal: com código (padrão) ou aberto para todos
+    Acesso {
+        #[arg(long)]
+        saida: PathBuf,
+        #[arg(long)]
+        produto: String,
+        #[arg(long, default_value = manifest::TESTING)]
+        canal: String,
+        /// aberto: qualquer launcher instala, sem código; codigo: só testadores com código
+        #[arg(value_parser = ["aberto", "codigo"])]
+        modo: String,
+    },
 }
 
 #[derive(clap::Args)]
@@ -118,6 +130,18 @@ struct PublicarArgs {
     /// Troca um pacote já publicado desta versão e plataforma
     #[arg(long)]
     substituir: bool,
+    /// Cor de destaque do produto no launcher (#RRGGBB)
+    #[arg(long)]
+    cor: Option<String>,
+    /// Linha curta mostrada sob o nome no launcher
+    #[arg(long)]
+    subtitulo: Option<String>,
+    /// Autor mostrado no launcher (padrão no launcher: UTSim)
+    #[arg(long)]
+    autor: Option<String>,
+    /// Ícone do produto: PNG quadrado de 32 a 512 px (recomendado 256 x 256, até 256 kB)
+    #[arg(long)]
+    icone: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -275,6 +299,10 @@ fn run(cli: Cli) -> Result<(), String> {
                 notas,
                 notas_texto,
                 substituir,
+                cor,
+                subtitulo,
+                autor,
+                icone,
             } = *a;
             let notes = match (notas, notas_texto) {
                 (Some(p), _) => std::fs::read_to_string(&p)
@@ -299,6 +327,12 @@ fn run(cli: Cli) -> Result<(), String> {
                 args,
                 notes,
                 replace: substituir,
+                appearance: Appearance {
+                    color: cor,
+                    subtitle: subtitulo,
+                    author: autor,
+                    icon: icone,
+                },
             };
             let out = Output { dir: saida };
             println!(
@@ -367,6 +401,46 @@ fn run(cli: Cli) -> Result<(), String> {
             println!(
                 "{produto} {versao} saiu do manifesto. O arquivo do pacote continua na pasta."
             );
+        }
+        Cmd::Acesso {
+            saida,
+            produto,
+            canal,
+            modo,
+        } => {
+            let out = Output { dir: saida };
+            let access = if modo == "aberto" {
+                Access::Open
+            } else {
+                Access::Code
+            };
+            let n =
+                utsim_publicar::set_access(&store, &out, &produto, &canal, access).map_err(e)?;
+            match access {
+                Access::Open => {
+                    println!("{produto} no canal {canal}: ABERTO PARA TODOS (sem código).");
+                    println!(
+                        "{n} pacote(s) já publicado(s) ficaram abertos; o manifesto foi reassinado."
+                    );
+                    println!(
+                        "Qualquer pessoa com o launcher (ou o link do manifesto) instala essas versões."
+                    );
+                }
+                Access::Code => {
+                    println!(
+                        "{produto} no canal {canal}: só com código, a partir da próxima publicação."
+                    );
+                    println!(
+                        "ATENÇÃO: as versões publicadas enquanto estava aberto continuam abrindo para quem"
+                    );
+                    println!(
+                        "baixou o manifesto nesse período (a chave foi pública). Para fechar de fato, publique"
+                    );
+                    println!(
+                        "uma versão nova; 'utsim-publicar reembrulhar' tira as chaves antigas do manifesto."
+                    );
+                }
+            }
         }
         Cmd::Verificar { saida } => {
             let out = Output { dir: saida };

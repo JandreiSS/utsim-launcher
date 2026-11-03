@@ -96,7 +96,7 @@ fn fetch_install_and_refuse_rollback() {
 
     let p = m.product("utsim").unwrap();
     let stop = AtomicBool::new(false);
-    utsim_launcher::install_release(&env, &state, p, &r1, &code, &stop, &mut |_| {}).unwrap();
+    utsim_launcher::install_release(&env, &state, p, &r1, Some(&code), &stop, &mut |_| {}).unwrap();
     assert_eq!(
         install::active_version(&env.layout, "utsim").as_deref(),
         Some("0.1.0")
@@ -110,7 +110,7 @@ fn fetch_install_and_refuse_rollback() {
 
     // Wrong code: refused before downloading.
     let other = AccessCode::generate().unwrap();
-    let r = utsim_launcher::install_release(&env, &state, p, &r1, &other, &stop, &mut |_| {});
+    let r = utsim_launcher::install_release(&env, &state, p, &r1, Some(&other), &stop, &mut |_| {});
     assert!(matches!(r, Err(Error::NoAccess)));
 
     // An older (validly signed) manifest is a rollback.
@@ -161,7 +161,7 @@ fn local_publication_folder_without_links() {
         &state,
         m.product("utsim").unwrap(),
         &r1,
-        &code,
+        Some(&code),
         &stop,
         &mut |_| {},
     )

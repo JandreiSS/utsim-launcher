@@ -33,7 +33,8 @@ Três crates, fora dos `default-members` do workspace (não pesam o build do sim
 |---|---|---|
 | `crates/utsim-launcher-core` | Biblioteca pura e testada: manifesto, assinatura, códigos, cifra, download com retomada, página do Drive, instalação, atalhos, relato | `ed25519-dalek 2.2.0`, `chacha20poly1305 0.10.1`, `argon2 0.5.3`, `sha2 0.10.9`, `ureq 2.12.1` (rustls), `zip 2.6.1` |
 | `crates/utsim-publicar` | Ferramenta de linha de comando do autor; só escreve arquivos locais | núcleo, `clap` |
-| `crates/utsim-launcher` | O aplicativo com janela (eframe 0.36, renderizador glow, sem wgpu) | núcleo, `eframe` |
+| `crates/utsim-launcher` | O aplicativo com janela (eframe 0.36, renderizador glow, sem wgpu) | núcleo, `eframe`, `utsim-ui-tema` (recurso `familia`) |
+| `crates/utsim-admin` | Janela do autor sobre a `utsim-publicar` (seção 12); nunca vai para os testadores | `utsim-publicar`, `eframe`, `utsim-ui-tema` |
 
 As versões das crates de criptografia estão fixadas com `=`; trocar uma delas é uma mudança
 revisada. Todas são do projeto RustCrypto ou do dalek-cryptography, as mais usadas em Rust.
@@ -144,6 +145,47 @@ aceita (proteção contra alguém repor um manifesto antigo para empurrar uma ve
 Canais: `estavel` e `testes`. Quem segue `testes` vê também as versões estáveis. Outros nomes
 de canal são aceitos (por exemplo, `vr-interno`) e aparecem na lista do produto.
 
+### Campos opcionais (acréscimo compatível, ainda formato 1)
+
+Um produto pode trazer a própria aparência no launcher, para que um produto novo não exija
+launcher novo, e o acesso por canal:
+
+```json
+{
+  "id": "lean-seis-sigma",
+  "name": "UTSim Seis Sigma",
+  "cor": "#4FD06A",
+  "subtitulo": "Projetos Lean Seis Sigma",
+  "autor": "UTSim",
+  "icone": "<PNG em base64>",
+  "acesso": { "testes": "Aberto" },
+  "releases": [ { "...": "...", "packages": [ { "...": "...", "chave_aberta": "<base64>" } ] } ]
+}
+```
+
+- `cor`: destaque do produto (`#RRGGBB`, validada na assinatura); `subtitulo`: a linha sob o
+  nome; `autor`: a etiqueta "POR ..." (padrão "UTSim").
+- `icone`: PNG quadrado, de 32 a 512 pixels de lado (recomendado **256 x 256**, cantos já
+  arredondados e transparentes), até 256 kB, embutido em base64 (fica coberto pela
+  assinatura). Um ícone inválido é ignorado e o launcher desenha um monograma (as iniciais na
+  cor do produto).
+- `acesso`: `Codigo` (padrão, o que vale para canais ausentes) ou `Aberto` (seção 13).
+- `chave_aberta` (no pacote): a chave de conteúdo em claro, presente só nos pacotes publicados
+  com o canal aberto.
+
+Os campos só são escritos quando têm valor, então um manifesto sem eles é idêntico ao do
+primeiro launcher, e um launcher antigo ignora os campos novos (testes
+`old_manifests_still_parse_and_verify` e `new_fields_roundtrip_and_old_readers_ignore_them`).
+`utsim-publicar publicar` recebe `--cor`, `--subtitulo`, `--autor` e `--icone <png>`; os
+valores ficam no manifesto e as publicações seguintes os mantêm. Os scripts
+`publicar-utsim.sh` e `publicar-seis-sigma.sh` já passam os ícones de
+`assets/icone/familia/` (`utsim_256.png`, `lean-seis-sigma_256.png`).
+
+O launcher também conhece a aparência dos produtos que existiam quando foi gerado
+(`catalogo::BUILTIN`): `utsim` (azul `#22B5FF`, ícone da empilhadeira), `utsim-3d`,
+`lean-seis-sigma` (verde `#4FD06A`, paquímetro e curva normal) e `ensino` (laranja `#F2A33A`,
+livro e fábrica, ainda não publicado). O que vier no manifesto tem prioridade.
+
 ## 3. Criptografia
 
 **Pacote (`.utpk`)**: o conteúdo é um `.zip` da pasta do programa. Ele é cifrado em blocos de
@@ -195,7 +237,8 @@ caminhos que saiam da pasta (`..`, absolutos); conferência de que o executável
 
 Uma vez:
 
-1. `cargo build --release -p utsim-publicar`.
+1. `cargo build --release -p utsim-publicar -p utsim-admin` (a linha de comando e a janela do
+   administrador, `target\release\utsim-admin.exe`; seção 12).
 2. `utsim-publicar chaves gerar`. A privada vai para `%APPDATA%\UTSim\chaves\privada.txt`; a
    ferramenta recusa uma pasta de dados dentro de um repositório git e recusa sobrescrever uma
    chave existente. Faça uma cópia da privada num pendrive ou gerenciador de senhas.
@@ -302,8 +345,13 @@ O manual do testador está em `docs/manual/src/launcher.md`.
   recusado, pacote alterado rejeitado antes de decifrar;
 - relato de erro e registro; atalhos (texto do PowerShell e do `.desktop`).
 
-A janela do launcher é compilada (`cargo build -p utsim-launcher`), não executada nos testes;
-a lógica que ela chama está em `crates/utsim-launcher/src/lib.rs`, testada.
+A janela do launcher (`janela.rs`) e a do administrador são desenhadas sem tela nos testes
+(`crates/utsim-launcher/tests/janela.rs`, `crates/utsim-admin/tests/telas.rs`): grade e lista
+com 0, 1 e vários produtos em todos os estados, tela do código, download em andamento, notas,
+confirmação de desinstalar, a animação de abertura em vários instantes e cada tela do
+administrador. Com `UTSIM_CAPTURAS=<pasta>` cada caso também vira um PNG, pintado em software
+por `utsim_ui_tema::captura` (sem GPU e sem janela), para revisar o desenho sem abrir o
+programa. A lógica que a janela chama está em `lib.rs` e `catalogo.rs`, testada.
 
 ## 9. Estimativa (horas Opus 5.5)
 
@@ -323,7 +371,10 @@ a lógica que ela chama está em `crates/utsim-launcher/src/lib.rs`, testada.
 - **Retenção**: quantas versões antigas manter no Drive (espaço da conta) e no testador
   (hoje: ativa + uma).
 - **Notas e nomes visíveis no manifesto**: aceitar como está ou cifrar.
-- **Ícone da janela**: a janela usa o ícone padrão do egui (o executável já tem o do UTSim).
+- **Ícone**: o launcher usa `assets/icone/familia/launcher.ico` (executável e instalador) e
+  `launcher_256.png` (janela e barra de tarefas). Os ícones 1024 x 1024 originais ficaram fora do
+  repositório (só 256 e 64 entram).
+- **Ícone do UTSim Ensino**: já embutido no launcher (`ensino_256.png`); falta o produto.
 - **Produto `utsim-3d`**: o pacote do Godot sai do G5 (`docs/plano_godot.md`); a publicação
   usa o mesmo `utsim-publicar publicar` com outro `--produto` e `--executavel`.
 - **Confirmar no primeiro envio real** que o Drive para computador mantém o id do
@@ -333,3 +384,88 @@ a lógica que ela chama está em `crates/utsim-launcher/src/lib.rs`, testada.
   wayland) deve compilar no Ubuntu sem bibliotecas extras do sistema (carrega X11 e Wayland
   em tempo de execução), mas isso não foi confirmado; se o CI falhar, basta acrescentar
   `--exclude utsim-launcher` no job Linux ou instalar `libxkbcommon-dev`.
+
+## 11. Interface do launcher
+
+Linguagem visual plana e quase preta, comum ao launcher e ao administrador
+(`utsim_ui_tema::familia`): fundo `#111214`, linhas de 1 pixel cinza, cantos retos, sem
+sombras; nomes numa sans (Segoe UI no Windows, DejaVu ou Noto no Linux, lidas do sistema, sem
+arquivo de fonte no repositório) e rótulos, versões e botões numa monoespaçada em versaletes
+espaçados (Consolas, DejaVu Sans Mono). Sem as fontes do sistema, ficam as embutidas do egui.
+
+- **Barra do topo**: "UTSIM" em negrito espaçado, divisória, "FAMÍLIA DE APPS"; à direita a
+  engrenagem (testador, inserir ou trocar código, atalho na área de trabalho, animação de
+  abertura, relato de erro). As bordas da janela são as do sistema.
+- **Barra de ferramentas**: atualizar a lista; "ATUALIZAR TODOS (n)" (branco, instala em fila),
+  "ORDENAR" (nome, mais recentes, com atualização), "Buscar aplicativos" e grade ou lista.
+  Vista e ordem ficam em `estado.json` (`view`, `sort`).
+- **Cartão**: faixa com a versão (`0.1.0 → 0.2.0`, a nova na cor do produto) e "NOTAS ↗";
+  ícone, nome em dois tons ("UTSim" branco e "Seis Sigma" na cor; "UT" e "Sim" no editor),
+  etiqueta "POR UTSIM", subtítulo, situação (ATUALIZAÇÃO DISPONÍVEL em amarelo, INSTALADO, NÃO
+  INSTALADO, SEM ACESSO, SEM VERSÃO PARA ESTE SISTEMA, e ABERTO PARA TODOS em verde), descrição,
+  "Última atualização"; embaixo o botão principal (branco quando muda algo, contornado para
+  "Abrir") e "…" (notas, pasta, canal, versões anteriores, remover antigas, desinstalar). O
+  progresso aparece numa barra fina sob o botão, que vira "Cancelar · 38%", e no rodapé.
+- **Lista**: colunas APLICATIVO, STATUS, VERSÃO, LANÇAMENTO, AUTOR e as ações; linhas
+  separadas por filetes. Em janelas estreitas, LANÇAMENTO e AUTOR saem.
+- **Rodapé**: "VERIFICADO HÁ N MIN · VIA DRIVE" (ou "LISTA GUARDADA · SEM CONEXÃO"), a
+  mensagem da última ação e o progresso.
+
+### Animação de abertura
+
+Cerca de 3,2 s, desenhada com o pintor do egui (sem vídeo, sem dependência nova): fundo quase
+preto com uma grade de filetes que desliza devagar e algumas faíscas; as três engrenagens do
+ícone do launcher entram girando engrenadas e com um leve zoom (ease-out expo); um brilho
+diagonal passa; "UTSIM" aparece letra por letra subindo, com espaçamento largo, e "FAMÍLIA DE
+APPS" surge em seguida; os ícones dos aplicativos se juntam sob o nome e voam para os seus
+lugares na grade enquanto a janela de verdade aparece por baixo (transição contínua, sem
+corte). A linha do tempo é a função pura `abertura::intro_frame(t)` (testada: progresso
+monótono, fim exatamente em `DURACAO`, pular vai ao fim). Qualquer tecla ou clique pula; toca
+uma vez por abertura; a opção "Mostrar animação de abertura" desliga; `--sem-animacao` e
+`UTSIM_SEM_ANIMACAO=1` também; e no Windows, com "Efeitos de animação" desligado (o
+`MinAnimate` = 0 que essa opção grava), ela não toca. A busca da lista começa no primeiro
+quadro, antes da animação.
+
+## 12. Administrador (`utsim-admin`)
+
+Janela do autor sobre a biblioteca `utsim-publicar`, na mesma linguagem visual do launcher.
+Gerada com `cargo build --release -p utsim-admin` (`target\release\utsim-admin.exe`); não
+entra no instalador do launcher nem vai para os testadores. Usa a mesma pasta de dados da linha
+de comando (`%APPDATA%\UTSim`, ou `--dados`/`UTSIM_PUBLICAR_DADOS`) e uma pasta de publicação
+escolhida na janela, lembrada em `<dados>/publicar/admin.json` (a primeira sugestão é
+`G:\Meu Drive\UTSim - testes`). Sem a chave privada, a janela só explica como criá-la
+(`utsim-publicar chaves gerar`); ela nunca cria nem mostra a privada.
+
+- **Testadores**: nome, id, canais, situação e data; "Adicionar" mostra o código uma vez, com
+  "Copiar" e o aviso de enviar só para a pessoa; "Canais" edita a lista
+  (`Store::set_channels`); "Revogar" e "Reativar".
+- **Publicações**: produtos, versões, canal e, por pacote, tamanho, link (ok ou ausente),
+  "aberto para todos" e quem tem acesso; "Verificar" (o mesmo relatório de
+  `utsim-publicar verificar`); "Refazer acesso" (`reembrulhar`, numa linha de execução à parte,
+  pois cada embrulho custa um Argon2id).
+- **Acesso**: por produto e canal, "Com código" ou "Aberto para todos", sempre com confirmação
+  e o aviso da seção 13.
+- **Chaves**: chave pública (com "Copiar") e o id; caminhos dos arquivos.
+
+## 13. Acesso aberto para todos
+
+O dono decide, por produto e canal, liberar a instalação sem código ("quem controla sou eu").
+Com `acesso: Aberto` no canal, a chave de conteúdo de cada pacote do canal vai para o manifesto
+assinado (`chave_aberta`), ao lado dos embrulhos por testador; qualquer launcher a usa para
+decifrar, e quem tem código continua usando o seu embrulho. A integridade não muda: o pacote
+ainda é conferido pelo SHA-256 assinado e pela autenticação AEAD, e a chave só vale porque
+veio num manifesto assinado.
+
+- Abrir (`utsim-publicar acesso --saida ... --produto ... --canal ... aberto`, ou a tela
+  Acesso) põe a chave nos pacotes **já publicados** do canal e reassina o manifesto no lugar;
+  as próximas publicações do canal saem abertas, mesmo sem testador cadastrado.
+- Fechar (`... codigo`) vale para a **próxima** publicação. **As versões publicadas enquanto o
+  canal estava aberto continuam abrindo para quem baixou o manifesto nesse período**, porque a
+  chave delas foi pública; não há como desfazer isso. Para fechar de fato, publique uma versão
+  nova; `reembrulhar` tira as chaves antigas do manifesto (quem não baixou antes deixa de vê-las).
+- O launcher mostra "ABERTO PARA TODOS" e instala sem código. A tela do código aparece sozinha
+  só quando o launcher não sabe onde está a lista, ou uma vez, depois de baixar a lista, se
+  algum produto pede código e ainda não há um ("Agora não" a fecha); depois, pelo botão
+  "Inserir código" de um produto "SEM ACESSO" ou pelo menu da engrenagem.
+- Testes: `crates/utsim-publicar/tests/acesso_aberto.rs` (aberto instala sem código, fechado
+  exige código, fechar afeta só versões novas, reembrulhar tira as chaves).

@@ -1,5 +1,11 @@
 //! What the launcher window does, without the window: fetch and check the manifest, install
-//! a release, open a product. The window (`main.rs`, eframe) only calls these.
+//! a release, open a product. The window itself is [`janela`] (drawn with egui, run by eframe
+//! in `main.rs`); [`catalogo`] turns the manifest into what the cards show and [`abertura`]
+//! is the opening animation.
+
+pub mod abertura;
+pub mod catalogo;
+pub mod janela;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -132,6 +138,11 @@ pub fn listed_for(pkg: &Package, code: &AccessCode) -> bool {
     pkg.wraps.iter().any(|w| w.id == code.id())
 }
 
+/// Whether this launcher can install `pkg`: it is open to everyone, or `code` is listed.
+pub fn can_install(pkg: &Package, code: Option<&AccessCode>) -> bool {
+    pkg.is_open() || code.is_some_and(|c| listed_for(pkg, c))
+}
+
 /// Downloads (resuming), checks, installs and activates a release; then removes old
 /// versions and refreshes the shortcuts. Returns the version folder.
 pub fn install_release(
@@ -139,7 +150,7 @@ pub fn install_release(
     state: &LauncherState,
     product: &Product,
     release: &Release,
-    code: &AccessCode,
+    code: Option<&AccessCode>,
     cancel: &AtomicBool,
     progress: &mut dyn FnMut(Progress),
 ) -> Result<PathBuf> {
@@ -149,7 +160,7 @@ pub fn install_release(
             release.version, env.platform
         ))
     })?;
-    if !listed_for(pkg, code) {
+    if !can_install(pkg, code) {
         return Err(Error::NoAccess);
     }
     let url = package_url(env.manifest_url(state), pkg).ok_or_else(|| {

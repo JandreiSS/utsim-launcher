@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use utsim_launcher_core::code::AccessCode;
 use utsim_launcher_core::crypto::{Argon2Params, ContentKey};
-use utsim_launcher_core::manifest::{self, Manifest, Product, Release};
+use utsim_launcher_core::manifest::{self, Access, Manifest, Product, Release};
 use utsim_launcher_core::{Error, Result, SigningKey, VerifyingKey, drive, package, signature};
 
 /// Name of the manifest file in the publication folder.
@@ -256,6 +256,39 @@ impl Store {
         ContentKey::from_base64(b64)
     }
 
+    /// Replaces the channels a tester may install (found by name or id).
+    pub fn set_channels(&self, who: &str, channels: &[String]) -> Result<Tester> {
+        for c in channels {
+            if !manifest::valid_id(c) {
+                return Err(Error::Format(format!("canal inválido '{c}'")));
+            }
+        }
+        let mut list = self.testers()?;
+        let t = list
+            .iter_mut()
+            .find(|t| {
+                t.name.eq_ignore_ascii_case(who.trim()) || t.id.eq_ignore_ascii_case(who.trim())
+            })
+            .ok_or_else(|| Error::Format(format!("testador '{who}' não encontrado")))?;
+        t.channels = channels.to_vec();
+        let out = t.clone();
+        self.save_testers(&list)?;
+        Ok(out)
+    }
+
+    fn admin_path(&self) -> PathBuf {
+        self.dir.join("publicar").join("admin.json")
+    }
+
+    /// The admin app's preferences (missing file: defaults).
+    pub fn admin_settings(&self) -> AdminSettings {
+        read_json(&self.admin_path()).unwrap_or_default()
+    }
+
+    pub fn save_admin_settings(&self, s: &AdminSettings) -> Result<()> {
+        write_json(&self.admin_path(), s)
+    }
+
     /// Active testers allowed on `channel`.
     pub fn codes_for(&self, channel: &str) -> Result<Vec<AccessCode>> {
         self.testers()?
@@ -263,6 +296,26 @@ impl Store {
             .filter(|t| t.active && t.channels.iter().any(|c| c == channel))
             .map(Tester::access_code)
             .collect()
+    }
+}
+
+/// Publication folder proposed the first time the admin app opens.
+pub const DEFAULT_OUTPUT: &str = r"G:\Meu Drive\UTSim - testes";
+
+/// Preferences of the admin app, in `<dados>/publicar/admin.json`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct AdminSettings {
+    /// Last publication folder used.
+    #[serde(default)]
+    pub output: Option<PathBuf>,
+}
+
+impl AdminSettings {
+    /// The folder to use: the last one, else [`DEFAULT_OUTPUT`].
+    pub fn output_dir(&self) -> PathBuf {
+        self.output
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(DEFAULT_OUTPUT))
     }
 }
 
@@ -333,6 +386,86 @@ pub struct PublishRequest {
     pub notes: String,
     /// Replace a package already published for this version and platform.
     pub replace: bool,
+    /// How the product looks in the launcher (fields left `None` keep what is there).
+    pub appearance: Appearance,
+}
+
+/// How a product looks in the launcher; every field is optional.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Appearance {
+    /// Accent colour, `#RRGGBB`.
+    pub color: Option<String>,
+    /// One line under the name.
+    pub subtitle: Option<String>,
+    /// Who makes it.
+    pub author: Option<String>,
+    /// A square PNG (see [`read_icon`]).
+    pub icon: Option<PathBuf>,
+}
+
+/// Smallest and largest side accepted for an icon, pixels.
+pub const ICON_SIDES: (u32, u32) = (32, 512);
+
+/// Reads a product icon: a square PNG from 32 to 512 pixels a side (256 x 256 recommended),
+/// at most [`manifest::ICON_MAX_BYTES`]. Returns it in base64, as the manifest keeps it.
+pub fn read_icon(path: &Path) -> Result<String> {
+    use base64::Engine as _;
+    let bytes =
+        fs::read(path).map_err(|e| Error::Install(format!("ícone {}: {e}", path.display())))?;
+    let (w, h) = png_size(&bytes)
+        .ok_or_else(|| Error::Format(format!("o ícone {} não é um PNG", path.display())))?;
+    if w != h || w < ICON_SIDES.0 || w > ICON_SIDES.1 {
+        return Err(Error::Format(format!(
+            "o ícone deve ser quadrado, de {} a {} pixels de lado (recomendado 256 x 256); este tem {w} x {h}",
+            ICON_SIDES.0, ICON_SIDES.1
+        )));
+    }
+    if bytes.len() > manifest::ICON_MAX_BYTES {
+        return Err(Error::Format(format!(
+            "o ícone tem {} kB; o limite é {} kB (o manifesto é baixado a cada abertura)",
+            bytes.len() / 1024,
+            manifest::ICON_MAX_BYTES / 1024
+        )));
+    }
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+/// Width and height from a PNG header.
+pub fn png_size(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.len() < 24 || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") || &bytes[12..16] != b"IHDR" {
+        return None;
+    }
+    let be = |i: usize| u32::from_be_bytes([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]]);
+    Some((be(16), be(20)))
+}
+
+/// Applies `look` to a product (fields left `None` are kept).
+pub fn apply_appearance(p: &mut Product, look: &Appearance) -> Result<()> {
+    if let Some(c) = &look.color {
+        let c = c.trim();
+        if c.is_empty() {
+            p.color = None;
+        } else {
+            let [r, g, b] = manifest::parse_color(c)
+                .ok_or_else(|| Error::Format(format!("cor inválida '{c}' (use #RRGGBB)")))?;
+            p.color = Some(format!("#{r:02X}{g:02X}{b:02X}"));
+        }
+    }
+    let text = |v: &Option<String>| {
+        v.as_ref()
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+    };
+    if look.subtitle.is_some() {
+        p.subtitle = text(&look.subtitle);
+    }
+    if look.author.is_some() {
+        p.author = text(&look.author);
+    }
+    if let Some(icon) = &look.icon {
+        p.icon = Some(read_icon(icon)?);
+    }
+    Ok(())
 }
 
 /// Result of `publish`.
@@ -393,8 +526,11 @@ pub fn publish(
         )));
     }
 
+    let open = m
+        .product(&req.product)
+        .is_some_and(|p| p.access(&req.channel) == Access::Open);
     let codes = store.codes_for(&req.channel)?;
-    if codes.is_empty() {
+    if codes.is_empty() && !open {
         return Err(Error::Install(format!(
             "nenhum testador ativo tem acesso ao canal '{}'; cadastre um com 'utsim-publicar testador adicionar'",
             req.channel
@@ -433,7 +569,10 @@ pub fn publish(
             params,
         )?;
         let n = wraps.len();
-        let entry = package::package_entry(&req.platform, "", &sealed, wraps);
+        let mut entry = package::package_entry(&req.platform, "", &sealed, wraps);
+        if open {
+            entry.open_key = Some(sealed.key.to_base64());
+        }
         Ok((entry, n, dest, sealed.size))
     })();
     let _ = fs::remove_dir_all(&scratch);
@@ -444,7 +583,7 @@ pub fn publish(
             id: req.product.clone(),
             name: req.name.clone().unwrap_or_default(),
             description: req.description.clone().unwrap_or_default(),
-            releases: Vec::new(),
+            ..Product::default()
         });
     }
     let p = m
@@ -456,6 +595,7 @@ pub fn publish(
     if let Some(d) = &req.description {
         p.description = d.clone();
     }
+    apply_appearance(p, &req.appearance)?;
     let now = utsim_launcher_core::state::now_rfc3339();
     match p.releases.iter_mut().find(|r| r.version == req.version) {
         Some(r) => {
@@ -548,6 +688,7 @@ pub fn rewrap(
                 continue;
             }
             let codes = store.codes_for(&r.channel)?;
+            let open = p.access.get(&r.channel).copied().unwrap_or_default() == Access::Open;
             for pkg in &mut r.packages {
                 let ctx =
                     utsim_launcher_core::crypto::package_context(&p.id, &r.version, &pkg.platform);
@@ -560,12 +701,64 @@ pub fn rewrap(
                     &pkg.platform,
                     params,
                 )?;
+                // A channel closed again stops publishing the key from now on (whoever read
+                // the manifest while it was open keeps it: see `set_access`).
+                pkg.open_key = open.then(|| content.to_base64());
                 count += 1;
             }
         }
     }
     out.save(store, &key, &mut m)?;
     Ok(count)
+}
+
+/// Sets who may install `product` in `channel` and re-signs the manifest in place; returns how
+/// many published packages became open.
+///
+/// - [`Access::Open`]: the content key of every package already published in that channel
+///   goes into the manifest, so any launcher installs it without a code, now; the next
+///   publications in the channel are open too.
+/// - [`Access::Code`]: the next publications (and `rewrap`) need a code again. The packages
+///   published while open **stay openable** by anyone who read the manifest then (the key was
+///   public); only a new version is closed for them. The keys already in the manifest stay
+///   until the next `rewrap`.
+pub fn set_access(
+    store: &Store,
+    out: &Output,
+    product: &str,
+    channel: &str,
+    access: Access,
+) -> Result<usize> {
+    if !manifest::valid_id(channel) {
+        return Err(Error::Format(format!("canal inválido '{channel}'")));
+    }
+    let key = store.signing_key()?;
+    let mut m = out.load(&key)?;
+    let p = m
+        .product_mut(product)
+        .ok_or_else(|| Error::Format(format!("produto '{product}' não está no manifesto")))?;
+    match access {
+        Access::Code => {
+            p.access.remove(channel);
+        }
+        Access::Open => {
+            p.access.insert(channel.to_string(), Access::Open);
+        }
+    }
+    let mut opened = 0;
+    if access == Access::Open {
+        let id = p.id.clone();
+        for r in p.releases.iter_mut().filter(|r| r.channel == channel) {
+            for pkg in &mut r.packages {
+                let ctx =
+                    utsim_launcher_core::crypto::package_context(&id, &r.version, &pkg.platform);
+                pkg.open_key = Some(store.content_key(&ctx)?.to_base64());
+                opened += 1;
+            }
+        }
+    }
+    out.save(store, &key, &mut m)?;
+    Ok(opened)
 }
 
 /// Removes a release from the manifest (the package file is left for the author to delete).
@@ -604,6 +797,13 @@ pub fn check(store: &Store, out: &Output) -> Result<(String, usize)> {
     let mut problems = 0;
     for p in &m.products {
         s.push_str(&format!("\n{} ({})\n", p.name, p.id));
+        for (channel, access) in &p.access {
+            if *access == Access::Open {
+                s.push_str(&format!(
+                    "  canal {channel}: ABERTO PARA TODOS (sem código)\n"
+                ));
+            }
+        }
         for r in &p.releases {
             s.push_str(&format!("  {} [{}]\n", r.version, r.channel));
             for pkg in &r.packages {
@@ -622,7 +822,10 @@ pub fn check(store: &Store, out: &Output) -> Result<(String, usize)> {
                 } else {
                     pkg.url.clone()
                 };
-                let who: Vec<String> = pkg.wraps.iter().map(|w| name_of(&w.id)).collect();
+                let mut who: Vec<String> = pkg.wraps.iter().map(|w| name_of(&w.id)).collect();
+                if pkg.is_open() {
+                    who.insert(0, "todos (aberto, sem código)".into());
+                }
                 s.push_str(&format!(
                     "    {}: {} bytes, {state}\n      link: {link}\n      acesso: {}\n",
                     pkg.platform,

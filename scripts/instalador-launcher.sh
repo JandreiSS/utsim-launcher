@@ -66,7 +66,7 @@ nativo() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else ech
 MSYS2_ARG_CONV_EXCL='*' "$MAKENSIS" -V2 \
     "-DVERSAO=$VERSAO" \
     "-DEXE=$(nativo "$PWD/$EXE")" \
-    "-DICONE=$(nativo "$PWD/assets/icone/utsim.ico")" \
+    "-DICONE=$(nativo "$PWD/assets/icone/familia/launcher.ico")" \
     "-DSAIDA=$(nativo "$SAIDA_ABS/$ARQUIVO")" \
     "$(nativo "$PWD/empacotamento/windows/utsim-launcher.nsi")"
 

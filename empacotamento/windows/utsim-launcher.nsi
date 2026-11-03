@@ -3,7 +3,7 @@
 ; Instala por usuário, sem administrador, em %LOCALAPPDATA%\Programs\UTSim Launcher. O launcher
 ; instala os aplicativos da família em %LOCALAPPDATA%\UTSim\launcher (fora desta pasta).
 ; Compilar com scripts/instalador-launcher.sh, que chama:
-;   makensis /DVERSAO=0.1.0 /DEXE=<utsim-launcher.exe> /DICONE=<utsim.ico> /DSAIDA=<instalador.exe> utsim-launcher.nsi
+;   makensis /DVERSAO=0.1.0 /DEXE=<utsim-launcher.exe> /DICONE=<launcher.ico> /DSAIDA=<instalador.exe> utsim-launcher.nsi
 
 Unicode true
 
@@ -14,7 +14,7 @@ Unicode true
   !error "Defina /DEXE=<caminho do utsim-launcher.exe de release>"
 !endif
 !ifndef ICONE
-  !error "Defina /DICONE=<caminho do utsim.ico>"
+  !error "Defina /DICONE=<caminho do launcher.ico>"
 !endif
 !ifndef SAIDA
   !define SAIDA "utsim-launcher-instalador.exe"

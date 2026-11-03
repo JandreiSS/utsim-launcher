@@ -41,11 +41,11 @@ fn main() {
     let out = Path::new(&std::env::var("OUT_DIR").unwrap_or_default()).join("confianca.rs");
     std::fs::write(out, code).expect("OUT_DIR");
 
-    println!("cargo:rerun-if-changed=../../assets/icone/utsim.ico");
+    println!("cargo:rerun-if-changed=../../assets/icone/familia/launcher.ico");
     #[cfg(windows)]
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         let mut res = winresource::WindowsResource::new();
-        res.set_icon("../../assets/icone/utsim.ico");
+        res.set_icon("../../assets/icone/familia/launcher.ico");
         res.set("ProductName", "UTSim Launcher");
         res.set(
             "FileDescription",
