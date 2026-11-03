@@ -226,7 +226,10 @@ Antes de enviar, o autor pode abrir o launcher com o endereço `file:///G:/Meu%2
 manifesto.
 
 Produto novo: `utsim-publicar publicar --produto lean-seis-sigma --nome "..." ...`. O launcher
-já existente passa a mostrá-lo; nenhuma mudança no launcher é necessária.
+já existente passa a mostrá-lo; nenhuma mudança no launcher é necessária. O UTSim Seis Sigma
+já tem o seu: `cargo build --release -p utsim-lss-app -p utsim-publicar` e
+`bash scripts/publicar-seis-sigma.sh "G:\Meu Drive\UTSim - testes" testes` (versão de
+`crates/utsim-lss-app/Cargo.toml`).
 
 ## 6. Fluxo do testador
 
