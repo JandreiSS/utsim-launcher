@@ -117,6 +117,8 @@ struct App {
     /// The manifest shown came from the local copy (no network).
     offline: bool,
     code_input: String,
+    /// Manifest address typed on the code screen (advanced).
+    url_input: String,
     code_error: Option<String>,
     editing_code: bool,
     selected: Option<String>,
@@ -143,6 +145,7 @@ impl App {
             offline: manifest.is_some(),
             manifest,
             code_input: String::new(),
+            url_input: state.manifest_url.clone().unwrap_or_default(),
             code_error: None,
             editing_code: state.code.is_none(),
             selected: select,
@@ -327,6 +330,8 @@ impl App {
                 if ok {
                     match AccessCode::parse(&self.code_input) {
                         Ok(code) => {
+                            let url = self.url_input.trim();
+                            self.state.manifest_url = (!url.is_empty()).then(|| url.to_string());
                             self.state.code = Some(code.formatted());
                             self.code_input.clear();
                             self.code_error = None;
@@ -342,7 +347,19 @@ impl App {
                 ui.add_space(8.0);
                 ui.colored_label(ui.visuals().error_fg_color, e);
             }
-            ui.add_space(24.0);
+            ui.add_space(16.0);
+            let no_builtin = utsim_launcher::built_in_manifest_url().is_empty();
+            egui::CollapsingHeader::new("Avançado")
+                .default_open(no_builtin)
+                .show(ui, |ui| {
+                    ui.label("Endereço da lista de versões (só se o autor pedir):");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.url_input)
+                            .hint_text("link do manifesto.json no Google Drive")
+                            .desired_width(420.0),
+                    );
+                });
+            ui.add_space(16.0);
             ui.small("O código fica guardado só neste computador, na sua pasta de usuário.");
         });
     }
