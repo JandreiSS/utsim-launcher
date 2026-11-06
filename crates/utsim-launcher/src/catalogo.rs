@@ -22,6 +22,8 @@ pub const ICON_UTSIM: &[u8] = include_bytes!("../../../assets/icone/familia/utsi
 pub const ICON_SEIS_SIGMA: &[u8] =
     include_bytes!("../../../assets/icone/familia/lean-seis-sigma_256.png");
 pub const ICON_ENSINO: &[u8] = include_bytes!("../../../assets/icone/familia/ensino_256.png");
+pub const ICON_QUALIDADE: &[u8] = include_bytes!("../../../assets/icone/familia/qualidade_256.png");
+pub const ICON_SEGURANCA: &[u8] = include_bytes!("../../../assets/icone/familia/seguranca_256.png");
 /// The launcher's own icon (window and taskbar).
 pub const ICON_LAUNCHER: &[u8] = include_bytes!("../../../assets/icone/familia/launcher_256.png");
 
@@ -49,6 +51,18 @@ pub const BUILTIN: &[Builtin] = &[
         color: [0xF2, 0xA3, 0x3A],
         subtitle: "Ensino pela simulação",
         icon: Some(ICON_ENSINO),
+    },
+    Builtin {
+        id: "qualidade",
+        color: [0x3A, 0x6E, 0xE0],
+        subtitle: "Engenharia da qualidade",
+        icon: Some(ICON_QUALIDADE),
+    },
+    Builtin {
+        id: "seguranca",
+        color: [0xF2, 0x8C, 0x1E],
+        subtitle: "Segurança do trabalho",
+        icon: Some(ICON_SEGURANCA),
     },
 ];
 
@@ -303,6 +317,8 @@ mod tests {
         assert_eq!(date_pt("2026-13-02"), None);
         assert_eq!(date_pt(""), None);
         assert!(builtin("lean-seis-sigma").is_some());
+        assert!(builtin("qualidade").is_some());
+        assert!(builtin("seguranca").is_some());
         for b in BUILTIN {
             let png = b.icon.unwrap();
             assert!(png.starts_with(b"\x89PNG"), "{}", b.id);
