@@ -24,6 +24,8 @@ pub const ICON_SEIS_SIGMA: &[u8] =
 pub const ICON_ENSINO: &[u8] = include_bytes!("../../../assets/icone/familia/ensino_256.png");
 pub const ICON_QUALIDADE: &[u8] = include_bytes!("../../../assets/icone/familia/qualidade_256.png");
 pub const ICON_SEGURANCA: &[u8] = include_bytes!("../../../assets/icone/familia/seguranca_256.png");
+pub const ICON_ESTATISTICA: &[u8] =
+    include_bytes!("../../../assets/icone/familia/estatistica_256.png");
 /// The launcher's own icon (window and taskbar).
 pub const ICON_LAUNCHER: &[u8] = include_bytes!("../../../assets/icone/familia/launcher_256.png");
 
@@ -48,7 +50,7 @@ pub const BUILTIN: &[Builtin] = &[
     },
     Builtin {
         id: "ensino",
-        color: [0xF2, 0xA3, 0x3A],
+        color: [0x8A, 0x5C, 0xE6],
         subtitle: "Ensino pela simulação",
         icon: Some(ICON_ENSINO),
     },
@@ -63,6 +65,12 @@ pub const BUILTIN: &[Builtin] = &[
         color: [0xF2, 0x8C, 0x1E],
         subtitle: "Segurança do trabalho",
         icon: Some(ICON_SEGURANCA),
+    },
+    Builtin {
+        id: "estatistica",
+        color: [0x1F, 0xB5, 0xA3],
+        subtitle: "Análise estatística",
+        icon: Some(ICON_ESTATISTICA),
     },
 ];
 
@@ -319,6 +327,7 @@ mod tests {
         assert!(builtin("lean-seis-sigma").is_some());
         assert!(builtin("qualidade").is_some());
         assert!(builtin("seguranca").is_some());
+        assert!(builtin("estatistica").is_some());
         for b in BUILTIN {
             let png = b.icon.unwrap();
             assert!(png.starts_with(b"\x89PNG"), "{}", b.id);

@@ -58,7 +58,8 @@ fn main() -> ExitCode {
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("UTSim Launcher")
         .with_inner_size([1180.0, 760.0])
-        .with_min_inner_size([660.0, 440.0]);
+        .with_min_inner_size([660.0, 440.0])
+        .with_maximized(true);
     if let Some((w, h, rgba)) = utsim_ui_tema::familia::png_rgba(ICON_LAUNCHER) {
         viewport = viewport.with_icon(Arc::new(egui::IconData {
             rgba,
