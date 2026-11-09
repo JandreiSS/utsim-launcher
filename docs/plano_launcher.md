@@ -182,9 +182,11 @@ valores ficam no manifesto e as publicações seguintes os mantêm. Os scripts
 `assets/icone/familia/` (`utsim_256.png`, `lean-seis-sigma_256.png`).
 
 O launcher também conhece a aparência dos produtos que existiam quando foi gerado
-(`catalogo::BUILTIN`): `utsim` (azul `#22B5FF`, ícone da empilhadeira), `utsim-3d`,
-`lean-seis-sigma` (verde `#4FD06A`, paquímetro e curva normal) e `ensino` (laranja `#F2A33A`,
-livro e fábrica, ainda não publicado). O que vier no manifesto tem prioridade.
+(`catalogo::BUILTIN`): `utsim` (azul `#22B5FF`, rede de nós), `utsim-3d`, `lean-seis-sigma`
+(verde `#4FD06A`, σ), `ensino` (roxo `#8A5CE6`, capelo), `qualidade` (azul `#3A6EE0`, lupa),
+`seguranca` (laranja `#F28C1E`, capacete) e `estatistica` (verde-água `#1FB5A3`, curva normal).
+Os ícones seguem o mesmo estilo plano e saem de `tools/icone/gerar_svgs.py`. O que vier no
+manifesto tem prioridade.
 
 ## 3. Criptografia
 
