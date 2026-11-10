@@ -27,6 +27,8 @@ pub const ICON_SEGURANCA: &[u8] = include_bytes!("../../../assets/icone/familia/
 pub const ICON_ESTATISTICA: &[u8] =
     include_bytes!("../../../assets/icone/familia/estatistica_256.png");
 /// The launcher's own icon (window and taskbar).
+/// The official logo (the three metallic gears), for the top bar.
+pub const LOGO_UTSIM: &[u8] = include_bytes!("../../../assets/icone/utsim-128.png");
 pub const ICON_LAUNCHER: &[u8] = include_bytes!("../../../assets/icone/familia/launcher_256.png");
 
 pub const BUILTIN: &[Builtin] = &[

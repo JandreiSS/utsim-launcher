@@ -364,6 +364,15 @@ fn code_screen_download_notes_and_no_manifest_draw() {
     app.confirm_uninstall = Some("lean-seis-sigma".into());
     draw(&mut app, vec2(1280.0, 820.0), "desinstalar");
 
+    let mut app = App::sem_rede(
+        Arc::clone(&env),
+        state(ViewMode::Grid, Some(&c)),
+        Some(m.clone()),
+    );
+    app.settings_open = true;
+    draw(&mut app, vec2(1280.0, 820.0), "configuracoes");
+    assert!(app.settings_open);
+
     let mut app = App::sem_rede(env, state(ViewMode::Grid, Some(&c)), Some(m));
     app.set_status(
         "a lista de versões respondeu HTTP 404. Mostrando a última lista baixada.",

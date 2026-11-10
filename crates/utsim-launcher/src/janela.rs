@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use eframe::egui::{
-    self, Color32, Context, Frame, Id, LayerId, Margin, Order, Rect, Sense, Stroke, TextureHandle,
-    TextureId, Ui, UiBuilder, Vec2, pos2, vec2,
+    self, Color32, Context, CornerRadius, Frame, Id, LayerId, Margin, Order, Rect, Sense, Stroke,
+    StrokeKind, TextureHandle, TextureId, Ui, UiBuilder, Vec2, pos2, vec2,
 };
 use utsim_launcher_core::code::AccessCode;
 use utsim_launcher_core::download::Progress;
@@ -23,12 +23,16 @@ use crate::abertura::{self, Intro, IntroState, Voo};
 use crate::catalogo::{self, Item, Status};
 
 /// Height of a card in the grid.
-pub const CARD_H: f32 = 300.0;
+pub const CARD_H: f32 = 272.0;
 /// Narrowest card; the grid has as many columns as fit.
 pub const CARD_MIN_W: f32 = 330.0;
 /// Height of a row in the list.
 pub const ROW_H: f32 = 68.0;
-const TOP_H: f32 = 48.0;
+const TOP_H: f32 = 56.0;
+/// Side of the logo in the top bar.
+const LOGO: f32 = 32.0;
+/// Space between cards.
+const GAP: f32 = 16.0;
 const FOOT_H: f32 = 30.0;
 const PAD: f32 = 20.0;
 
@@ -107,6 +111,10 @@ pub struct App {
     slots: Vec<Voo>,
     /// The code screen was already offered in this session.
     code_offered: bool,
+    /// The official logo of the top bar.
+    logo: Option<TextureHandle>,
+    /// The settings window is open.
+    pub settings_open: bool,
 }
 
 impl App {
@@ -162,6 +170,8 @@ impl App {
             less_motion: Arc::new(AtomicBool::new(false)),
             slots: Vec::new(),
             code_offered: false,
+            logo: None,
+            settings_open: false,
             state,
             env,
         }
@@ -585,9 +595,22 @@ impl App {
             ],
             Stroke::new(1.0, cores::LINHA),
         );
+        // The official logo (the three gears), then the wordmark.
+        let logo = Rect::from_min_size(
+            pos2(r.left() + PAD, r.center().y - LOGO / 2.0),
+            Vec2::splat(LOGO),
+        );
+        if let Some(id) = self.logo(ui.ctx()) {
+            p.image(
+                id,
+                logo,
+                Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+                Color32::WHITE,
+            );
+        }
         let mark = familia::pintar_texto(
             &p,
-            pos2(r.left() + PAD, r.center().y),
+            pos2(logo.right() + 12.0, r.center().y),
             familia::espacado("UTSIM", familia::negrito(17.0), cores::BRANCO, 3.5),
         );
         let x = mark.right() + 22.0;
@@ -623,32 +646,130 @@ impl App {
             Icone::Engrenagem,
             cores::TEXTO,
         );
-        egui::Popup::menu(&resp)
-            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-            .show(|ui| self.settings_menu(ui));
+        if resp.clicked() {
+            self.settings_open = true;
+        }
+
+        // Who is testing: a chip that opens the code screen.
+        let code = self.code();
+        let text = match &code {
+            Some(c) => format!("TESTADOR · {}", c.id().to_uppercase()),
+            None => "SEM CÓDIGO DE TESTADOR".to_string(),
+        };
+        let g = p.layout_job(familia::espacado(
+            &text,
+            familia::mono(10.5),
+            cores::TEXTO_FRACO,
+            1.6,
+        ));
+        let chip = Rect::from_min_size(
+            pos2(gear.left() - 16.0 - g.size().x - 24.0, r.center().y - 14.0),
+            vec2(g.size().x + 24.0, 28.0),
+        );
+        if chip.left() > x + 200.0 {
+            let busy = self.busy();
+            let resp = ui
+                .allocate_rect(chip, if busy { Sense::hover() } else { Sense::click() })
+                .on_hover_text(if code.is_some() {
+                    "Trocar o código de testador"
+                } else {
+                    "Inserir um código de testador para ver os aplicativos em teste"
+                });
+            let fill = if resp.hovered() && !busy {
+                cores::SOBRE
+            } else {
+                cores::FUNDO
+            };
+            p.rect(
+                chip,
+                CornerRadius::same(14),
+                fill,
+                Stroke::new(1.0, cores::LINHA),
+                StrokeKind::Inside,
+            );
+            let dot = pos2(chip.left() + 12.0, chip.center().y);
+            let on = if code.is_some() {
+                cores::VERDE
+            } else {
+                cores::TEXTO_APAGADO
+            };
+            p.circle_filled(dot, 3.0, on);
+            p.galley(
+                pos2(chip.left() + 20.0, chip.center().y - g.size().y / 2.0),
+                g,
+                Color32::WHITE,
+            );
+            if resp.clicked() {
+                self.editing_code = true;
+            }
+        }
     }
 
-    fn settings_menu(&mut self, ui: &mut Ui) {
-        ui.set_min_width(280.0);
+    /// The texture of the official logo, loaded once.
+    fn logo(&mut self, ctx: &Context) -> Option<TextureId> {
+        if self.logo.is_none() {
+            self.logo = familia::imagem_png(catalogo::LOGO_UTSIM)
+                .map(|img| ctx.load_texture("logo-utsim", img, egui::TextureOptions::LINEAR));
+        }
+        self.logo.as_ref().map(TextureHandle::id)
+    }
+
+    /// The settings window: tester code, installation, list of versions, opening, help.
+    fn settings(&mut self, ctx: &Context) {
+        if !self.settings_open {
+            return;
+        }
+        let modal = egui::Modal::new(Id::new("configuracoes"))
+            .frame(
+                Frame::NONE
+                    .fill(cores::SUPERFICIE)
+                    .stroke(Stroke::new(1.0, cores::LINHA_FORTE))
+                    .corner_radius(CornerRadius::same(10))
+                    .inner_margin(Margin::same(24)),
+            )
+            .show(ctx, |ui| {
+                ui.set_width(480.0_f32.min(ctx.content_rect().width() - 80.0));
+                ui.label(
+                    egui::RichText::new("Configurações")
+                        .font(familia::negrito(20.0))
+                        .color(cores::BRANCO),
+                );
+                ui.add_space(4.0);
+                self.settings_body(ui);
+                ui.add_space(16.0);
+                familia::botao(ui, "Fechar", Botao::Contorno, vec2(120.0, 32.0), true).clicked()
+            });
+        if modal.inner || modal.should_close() {
+            self.settings_open = false;
+        }
+    }
+
+    fn settings_body(&mut self, ui: &mut Ui) {
+        let busy = self.busy();
+        let section = |ui: &mut Ui, title: &str| {
+            ui.add_space(14.0);
+            familia::rotulo(ui, title, 10.5, cores::TEXTO_APAGADO);
+            ui.add_space(2.0);
+        };
+        let weak = |t: String| egui::RichText::new(t).color(cores::TEXTO_FRACO);
+
+        section(ui, "Testador");
         let code = self.code();
-        familia::rotulo(ui, "Testador", 10.5, cores::TEXTO_APAGADO);
         ui.label(match &code {
-            Some(c) => format!("Código de {}", c.id()),
-            None => "Sem código (só aplicativos abertos)".into(),
+            Some(c) => format!("Código de {}.", c.id()),
+            None => "Sem código: só os aplicativos abertos para todos.".into(),
         });
         let label = if code.is_some() {
             "Trocar código"
         } else {
             "Inserir código"
         };
-        if ui
-            .add_enabled(!self.busy(), egui::Button::new(label))
-            .clicked()
-        {
+        if familia::botao(ui, label, Botao::Contorno, vec2(170.0, 30.0), !busy).clicked() {
             self.editing_code = true;
-            ui.close();
+            self.settings_open = false;
         }
-        ui.separator();
+
+        section(ui, "Instalação");
         let mut desktop = self.state.desktop_shortcuts;
         if ui
             .checkbox(&mut desktop, "Criar atalho na área de trabalho ao instalar")
@@ -657,23 +778,53 @@ impl App {
             self.state.desktop_shortcuts = desktop;
             self.save_state();
         }
+        let root = self.env.layout.root.clone();
+        ui.horizontal(|ui| {
+            ui.label(weak(format!("Aplicativos em {}", root.display())));
+            if ui.small_button("Abrir pasta").clicked() {
+                open_folder(&root);
+            }
+        });
+
+        section(ui, "Lista de versões");
+        ui.label(weak(self.check_line().to_lowercase()));
+        if familia::botao(
+            ui,
+            "Buscar agora",
+            Botao::Contorno,
+            vec2(170.0, 30.0),
+            !busy,
+        )
+        .clicked()
+        {
+            self.refresh(ui.ctx());
+        }
+
+        section(ui, "Abertura");
         let mut intro = !self.state.skip_intro;
         if ui
-            .checkbox(&mut intro, "Mostrar animação de abertura")
+            .checkbox(&mut intro, "Mostrar a animação ao abrir o launcher")
             .changed()
         {
             self.state.skip_intro = !intro;
             self.save_state();
         }
-        ui.separator();
-        if ui
-            .add_enabled(!self.busy(), egui::Button::new("Gerar relato de erro"))
-            .on_hover_text("Cria um .zip com os registros do launcher para enviar ao autor")
-            .clicked()
+
+        section(ui, "Ajuda");
+        if familia::botao(
+            ui,
+            "Gerar relato de erro",
+            Botao::Contorno,
+            vec2(220.0, 30.0),
+            !busy,
+        )
+        .on_hover_text("Cria um .zip com os registros do launcher para enviar ao autor")
+        .clicked()
         {
             self.start_report(ui.ctx());
-            ui.close();
+            self.settings_open = false;
         }
+        ui.add_space(10.0);
         ui.label(
             egui::RichText::new(format!("UTSim Launcher {}", env!("CARGO_PKG_VERSION")))
                 .size(11.5)
@@ -751,24 +902,20 @@ impl App {
         }
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
-            .show(ui, |ui| match self.state.view {
-                ViewMode::Grid => self.grid(ui, &items, icon_alpha),
-                ViewMode::List => self.list(ui, &items, icon_alpha),
+            .show(ui, |ui| {
+                self.updates_banner(ui, &items);
+                match self.state.view {
+                    ViewMode::Grid => self.grid(ui, &items, icon_alpha),
+                    ViewMode::List => self.list(ui, &items, icon_alpha),
+                }
             });
     }
 
     fn toolbar(&mut self, ui: &mut Ui, items: &[Item]) {
-        let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 66.0), Sense::hover());
+        let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 72.0), Sense::hover());
         let h = 34.0;
         let y = bar.center().y - h / 2.0;
         let busy = self.busy();
-        let refresh = Rect::from_min_size(pos2(bar.left(), y), Vec2::splat(h));
-        if familia::botao_icone_em(ui, refresh, Icone::Atualizar, false, !busy)
-            .on_hover_text("Buscar a lista de novo")
-            .clicked()
-        {
-            self.refresh(ui.ctx());
-        }
         let narrow = bar.width() < 900.0;
         let mut x = bar.right();
         // Grid and list toggle.
@@ -794,7 +941,7 @@ impl App {
             x -= 2.0;
         }
         // Search.
-        let sw = if narrow { 150.0 } else { 210.0 };
+        let sw = if narrow { 150.0 } else { 220.0 };
         x -= 8.0 + sw;
         let search = Rect::from_min_size(pos2(x, y), vec2(sw, h));
         ui.scope_builder(UiBuilder::new().max_rect(search), |ui| {
@@ -827,62 +974,160 @@ impl App {
             self.state.sort = sort;
             self.save_state();
         }
-        if !narrow {
-            let job = familia::espacado("ORDENAR", familia::mono(10.5), cores::TEXTO_APAGADO, 2.0);
-            let g = ui.painter().layout_job(job);
-            x -= 10.0 + g.size().x;
-            ui.painter().galley(
-                pos2(x, bar.center().y - g.size().y / 2.0),
-                g,
+        // Refresh the list.
+        x -= 8.0 + h;
+        let refresh = Rect::from_min_size(pos2(x, y), Vec2::splat(h));
+        if familia::botao_icone_em(ui, refresh, Icone::Atualizar, false, !busy)
+            .on_hover_text("Buscar a lista de versões de novo")
+            .clicked()
+        {
+            self.refresh(ui.ctx());
+        }
+        // Title and summary on the left, where they fit.
+        let p = ui.painter();
+        let title = p.layout_no_wrap(
+            "Aplicativos".to_string(),
+            familia::negrito(22.0),
+            cores::BRANCO,
+        );
+        if bar.left() + title.size().x + 16.0 < x {
+            let top = bar.center().y - 24.0;
+            p.galley(pos2(bar.left(), top), title, cores::BRANCO);
+            let installed = items.iter().filter(|i| i.active.is_some()).count();
+            let updates = items.iter().filter(|i| i.has_update()).count();
+            let mut parts = vec![
+                format!("{} no total", items.len()),
+                format!(
+                    "{installed} instalado{}",
+                    if installed == 1 { "" } else { "s" }
+                ),
+            ];
+            if updates > 0 {
+                parts.push(format!(
+                    "{updates} atualização{} disponível{}",
+                    if updates == 1 { "" } else { "ões" },
+                    if updates == 1 { "" } else { "is" }
+                ));
+            }
+            p.galley(
+                pos2(bar.left(), top + 29.0),
+                p.layout_job(familia::linha(
+                    &parts.join(" · "),
+                    familia::sans(13.0),
+                    cores::TEXTO_FRACO,
+                    x - bar.left() - 16.0,
+                )),
                 Color32::WHITE,
             );
         }
-        // Update all.
-        let n = items.iter().filter(|i| i.has_update()).count();
-        let label = format!("Atualizar todos ({n})");
-        let bw = 190.0;
-        x -= 12.0 + bw;
-        if x > refresh.right() + 8.0 {
-            let r = Rect::from_min_size(pos2(x, y), vec2(bw, h));
-            if familia::botao_em(ui, r, &label, Botao::Primario, n > 0 && !busy).clicked() {
-                self.update_all(ui.ctx());
-            }
-        }
     }
 
+    /// The strip that lists the updates waiting, with "Atualizar todos".
+    fn updates_banner(&mut self, ui: &mut Ui, items: &[Item]) {
+        let ups: Vec<&Item> = items.iter().filter(|i| i.has_update()).collect();
+        if ups.is_empty() {
+            return;
+        }
+        ui.add_space(6.0);
+        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 60.0), Sense::hover());
+        let p = ui.painter().clone();
+        p.rect(
+            r,
+            CornerRadius::same(10),
+            cores::AMARELO.gamma_multiply(0.07),
+            Stroke::new(1.0, cores::AMARELO.gamma_multiply(0.45)),
+            StrokeKind::Inside,
+        );
+        let n = ups.len();
+        let head = format!(
+            "{n} ATUALIZAÇ{} DISPONÍVE{}",
+            if n == 1 { "ÃO" } else { "ÕES" },
+            if n == 1 { "L" } else { "IS" }
+        );
+        let bw = 190.0;
+        let button = Rect::from_min_size(
+            pos2(r.right() - 14.0 - bw, r.center().y - 17.0),
+            vec2(bw, 34.0),
+        );
+        let x = r.left() + 18.0;
+        familia::pintar_texto(
+            &p,
+            pos2(x, r.top() + 19.0),
+            familia::espacado(&head, familia::mono_negrito(11.0), cores::AMARELO, 1.6),
+        );
+        let list = ups
+            .iter()
+            .map(|i| {
+                let (a, b) = i.versions();
+                format!(
+                    "{} {} → {}",
+                    i.name,
+                    a.unwrap_or_default(),
+                    b.unwrap_or_default()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("   ·   ");
+        p.galley(
+            pos2(x, r.top() + 31.0),
+            p.layout_job(familia::linha(
+                &list,
+                familia::sans(13.0),
+                cores::TEXTO,
+                button.left() - x - 16.0,
+            )),
+            Color32::WHITE,
+        );
+        let label = if n == 1 {
+            "Atualizar".to_string()
+        } else {
+            format!("Atualizar todos ({n})")
+        };
+        let busy = self.busy();
+        if familia::botao_em(ui, button, &label, Botao::Primario, !busy).clicked() {
+            self.update_all(ui.ctx());
+        }
+        ui.add_space(18.0);
+    }
+
+    /// The cards in two groups: the apps on this computer, then the others.
     fn grid(&mut self, ui: &mut Ui, items: &[Item], icon_alpha: f32) {
-        let w = ui.available_width();
-        let cols = ((w / CARD_MIN_W).floor() as usize).max(1);
-        let cw = (w / cols as f32).floor();
-        let rows = items.len().div_ceil(cols);
-        let (rect, _) = ui.allocate_exact_size(vec2(w, rows as f32 * CARD_H + PAD), Sense::hover());
-        for (k, item) in items.iter().enumerate() {
-            let (row, col) = (k / cols, k % cols);
-            let x0 = rect.left() + col as f32 * cw;
-            let x1 = if col + 1 == cols {
-                rect.right()
-            } else {
-                x0 + cw
-            };
-            let cell = Rect::from_min_max(
-                pos2(x0, rect.top() + row as f32 * CARD_H),
-                pos2(x1, rect.top() + (row + 1) as f32 * CARD_H),
+        let (mine, others): (Vec<&Item>, Vec<&Item>) =
+            items.iter().partition(|i| i.active.is_some());
+        for (title, group) in [
+            ("Neste computador", mine),
+            ("Disponíveis para instalar", others),
+        ] {
+            if group.is_empty() {
+                continue;
+            }
+            familia::rotulo(
+                ui,
+                &format!("{title} · {}", group.len()),
+                11.0,
+                cores::TEXTO_FRACO,
             );
-            // Hairlines shared by neighbours: each card draws its top and left edges, and its
-            // right and bottom ones only where no card follows (one pixel everywhere).
-            let p = ui.painter();
-            let line = Stroke::new(1.0, cores::LINHA);
-            let (l, t) = (cell.left() + 0.5, cell.top() + 0.5);
-            let (r, b) = (cell.right() - 0.5, cell.bottom() - 0.5);
-            p.line_segment([pos2(l, t), pos2(cell.right(), t)], line);
-            p.line_segment([pos2(l, t), pos2(l, cell.bottom())], line);
-            if col + 1 == cols || k + 1 == items.len() {
-                p.line_segment([pos2(r, t), pos2(r, cell.bottom())], line);
+            ui.add_space(8.0);
+            let w = ui.available_width();
+            let cols = (((w + GAP) / (CARD_MIN_W + GAP)).floor() as usize).max(1);
+            let cw = ((w - GAP * (cols - 1) as f32) / cols as f32).floor();
+            let rows = group.len().div_ceil(cols);
+            let (rect, _) = ui.allocate_exact_size(
+                vec2(w, rows as f32 * CARD_H + (rows - 1) as f32 * GAP),
+                Sense::hover(),
+            );
+            for (k, item) in group.iter().enumerate() {
+                let (row, col) = (k / cols, k % cols);
+                let cell = Rect::from_min_size(
+                    pos2(
+                        rect.left() + col as f32 * (cw + GAP),
+                        rect.top() + row as f32 * (CARD_H + GAP),
+                    ),
+                    vec2(cw, CARD_H),
+                );
+                ui.push_id(&item.id, |ui| self.card(ui, cell, item, icon_alpha));
             }
-            if k + cols >= items.len() {
-                p.line_segment([pos2(l, b), pos2(cell.right(), b)], line);
-            }
-            ui.push_id(&item.id, |ui| self.card(ui, cell, item, icon_alpha));
+            ui.add_space(26.0);
         }
     }
 
@@ -919,72 +1164,38 @@ impl App {
     fn card(&mut self, ui: &mut Ui, cell: Rect, item: &Item, icon_alpha: f32) {
         let p = ui.painter().clone();
         let acc = accent(item);
-        // Header strip: versions and release notes.
-        let head = Rect::from_min_size(cell.min, vec2(cell.width(), 40.0));
-        p.line_segment(
-            [
-                head.left_bottom() + vec2(0.0, 0.5),
-                head.right_bottom() + vec2(0.0, 0.5),
-            ],
-            Stroke::new(1.0, cores::LINHA),
-        );
-        let (old, new) = item.versions();
-        let mut job = egui::text::LayoutJob::default();
-        let fmt = |c: Color32| egui::TextFormat {
-            font_id: familia::mono(12.0),
-            color: c,
-            extra_letter_spacing: 1.3,
-            ..Default::default()
-        };
-        match (&old, &new) {
-            (Some(o), Some(n)) => {
-                job.append(o, 0.0, fmt(cores::TEXTO));
-                job.append("  →  ", 0.0, fmt(cores::TEXTO_FRACO));
-                job.append(n, 0.0, fmt(acc));
-            }
-            (None, Some(n)) => job.append(&format!("V{n}"), 0.0, fmt(acc)),
-            _ => job.append("—", 0.0, fmt(cores::TEXTO_APAGADO)),
-        }
-        familia::pintar_texto(&p, pos2(head.left() + PAD, head.center().y), job);
-        if item.latest.is_some() {
-            let g = p.layout_job(familia::espacado(
-                "NOTAS ↗",
-                familia::mono(11.0),
-                cores::TEXTO_FRACO,
-                1.6,
-            ));
-            let r = Rect::from_min_size(
-                pos2(
-                    head.right() - PAD - g.size().x,
-                    head.center().y - g.size().y / 2.0,
-                ),
-                g.size(),
-            )
-            .expand(4.0);
-            let resp = ui
-                .allocate_rect(r, Sense::click())
-                .on_hover_text("Notas da versão");
-            let color = if resp.hovered() {
-                cores::BRANCO
+        let over = ui.rect_contains_pointer(cell);
+        p.rect(
+            cell,
+            CornerRadius::same(10),
+            if over {
+                cores::SOBRE
             } else {
-                cores::TEXTO_FRACO
-            };
-            p.galley(r.min + vec2(4.0, 4.0), g, color);
-            if resp.clicked() {
-                self.notes = Some(item.id.clone());
-            }
-        }
+                cores::SUPERFICIE
+            },
+            Stroke::new(
+                1.0,
+                if over {
+                    cores::LINHA_FORTE
+                } else {
+                    cores::LINHA
+                },
+            ),
+            StrokeKind::Inside,
+        );
+        // A line in the app's colour along the top edge (the card's own corners).
+        p.with_clip_rect(Rect::from_min_size(cell.min, vec2(cell.width(), 3.0)))
+            .rect_filled(cell, CornerRadius::same(10), acc);
 
-        // Body.
+        // Icon, name, subtitle and author.
         let left = cell.left() + PAD;
         let inner_w = cell.width() - 2.0 * PAD;
-        let icon = Rect::from_min_size(pos2(left, head.bottom() + PAD), Vec2::splat(56.0));
+        let icon = Rect::from_min_size(pos2(left, cell.top() + PAD + 2.0), Vec2::splat(56.0));
         self.icon(ui, icon, item, icon_alpha);
         let tx = icon.right() + 14.0;
         let name_w = cell.right() - PAD - tx;
-        let name = name_job(item, 21.0);
-        let g = p.layout_job(name);
-        let name_rect = Rect::from_min_size(pos2(tx, icon.top() + 2.0), g.size());
+        let g = p.layout_job(name_job(item, 21.0));
+        let name_rect = Rect::from_min_size(pos2(tx, icon.top() + 4.0), g.size());
         p.galley(name_rect.min, g, Color32::WHITE);
         let tag = format!("POR {}", item.author.to_uppercase());
         let tg = p.layout_job(familia::espacado(
@@ -1003,7 +1214,7 @@ impl App {
             );
         }
         p.galley(
-            pos2(tx, name_rect.bottom() + 2.0),
+            pos2(tx, name_rect.bottom() + 3.0),
             p.layout_job(familia::linha(
                 &item.subtitle,
                 familia::sans(13.5),
@@ -1013,8 +1224,8 @@ impl App {
             Color32::WHITE,
         );
 
-        // Status badges.
-        let by = icon.bottom() + 26.0;
+        // Status badges and description.
+        let by = icon.bottom() + 22.0;
         let b = familia::pintar_etiqueta(
             &p,
             pos2(left, by),
@@ -1031,33 +1242,106 @@ impl App {
                 10.5,
             );
         }
-        // Description and date.
-        let dg = p.layout_job(familia::paragrafo(
-            &item.description,
-            familia::sans(13.5),
-            cores::TEXTO,
-            inner_w,
-            2,
-        ));
-        let dy = by + 20.0;
-        let dh = dg.size().y;
-        p.galley(pos2(left, dy), dg, Color32::WHITE);
-        if let Some(d) = item.release_date() {
-            p.galley(
-                pos2(left, dy + dh + 8.0),
-                p.layout_job(familia::linha(
-                    &format!("Última atualização: {d}"),
-                    familia::sans(12.5),
+        p.galley(
+            pos2(left, by + 18.0),
+            p.layout_job(familia::paragrafo(
+                &item.description,
+                familia::sans(13.5),
+                cores::TEXTO,
+                inner_w,
+                2,
+            )),
+            Color32::WHITE,
+        );
+
+        // Versions: installed, newest and its date, with the release notes on the right.
+        let bh = 34.0;
+        let row = Rect::from_min_size(pos2(left, cell.bottom() - PAD - bh), vec2(inner_w, bh));
+        let vy = row.top() - 22.0;
+        let ly = vy - 17.0;
+        p.line_segment(
+            [pos2(left, ly - 13.0), pos2(cell.right() - PAD, ly - 13.0)],
+            Stroke::new(1.0, cores::LINHA),
+        );
+        let col = inner_w / 3.6;
+        let newest = item.latest.as_ref().map(|r| r.version.clone());
+        let columns = [
+            (
+                "Instalada",
+                item.active.clone().unwrap_or_else(|| "—".into()),
+                if item.active.is_some() {
+                    cores::TEXTO
+                } else {
+                    cores::TEXTO_APAGADO
+                },
+            ),
+            (
+                "Mais nova",
+                newest.unwrap_or_else(|| "—".into()),
+                if item.has_update() {
+                    cores::AMARELO
+                } else {
+                    acc
+                },
+            ),
+            (
+                "Publicada",
+                item.release_date().unwrap_or_else(|| "—".into()),
+                cores::TEXTO_FRACO,
+            ),
+        ];
+        for (k, (label, value, color)) in columns.into_iter().enumerate() {
+            let x = left + k as f32 * col;
+            let w = if k == 2 {
+                cell.right() - PAD - x
+            } else {
+                col - 8.0
+            };
+            familia::pintar_texto(
+                &p,
+                pos2(x, ly),
+                familia::espacado(
+                    &label.to_uppercase(),
+                    familia::mono(9.5),
                     cores::TEXTO_APAGADO,
-                    inner_w,
-                )),
-                Color32::WHITE,
+                    1.4,
+                ),
             );
+            let font = if k == 2 {
+                familia::sans(12.5)
+            } else {
+                familia::mono(12.5)
+            };
+            let g = p.layout_job(familia::linha(&value, font, color, w));
+            p.galley(pos2(x, vy - g.size().y / 2.0), g, Color32::WHITE);
+        }
+        if item.latest.is_some() {
+            let g = p.layout_job(familia::espacado(
+                "NOTAS ↗",
+                familia::mono(10.5),
+                cores::TEXTO_FRACO,
+                1.6,
+            ));
+            let r = Rect::from_min_size(
+                pos2(cell.right() - PAD - g.size().x, ly - g.size().y / 2.0),
+                g.size(),
+            )
+            .expand(4.0);
+            let resp = ui
+                .allocate_rect(r, Sense::click())
+                .on_hover_text("Notas da versão");
+            let color = if resp.hovered() {
+                cores::BRANCO
+            } else {
+                cores::TEXTO_FRACO
+            };
+            p.galley(r.min + vec2(4.0, 4.0), g, color);
+            if resp.clicked() {
+                self.notes = Some(item.id.clone());
+            }
         }
 
         // Buttons.
-        let bh = 34.0;
-        let row = Rect::from_min_size(pos2(left, cell.bottom() - PAD - bh), vec2(inner_w, bh));
         let more = Rect::from_min_size(pos2(row.right() - bh, row.top()), Vec2::splat(bh));
         let main = Rect::from_min_max(row.min, pos2(more.left() - 8.0, row.bottom()));
         self.actions(ui, item, main, more);
@@ -1521,6 +1805,7 @@ impl App {
     }
 
     fn modals(&mut self, ctx: &Context) {
+        self.settings(ctx);
         if let Some(id) = self.notes.clone() {
             let product = self.manifest.as_ref().and_then(|m| m.product(&id)).cloned();
             let Some(product) = product else {
@@ -1633,6 +1918,7 @@ impl App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+        utsim_ui_tema::maximizar_no_inicio(ui.ctx());
         self.draw(ui);
     }
 }
