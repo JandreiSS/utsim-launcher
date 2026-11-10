@@ -15,7 +15,7 @@ use std::time::Duration;
 use utsim_launcher_core::code::AccessCode;
 use utsim_launcher_core::download::{self, Job, Progress};
 use utsim_launcher_core::install::{self, Layout};
-use utsim_launcher_core::manifest::{Manifest, Package, Product, Release};
+use utsim_launcher_core::manifest::{self, Manifest, Package, Product, Release};
 use utsim_launcher_core::report::Log;
 use utsim_launcher_core::shortcuts::{self, Shortcut};
 use utsim_launcher_core::state::LauncherState;
@@ -143,17 +143,17 @@ pub fn can_install(pkg: &Package, code: Option<&AccessCode>) -> bool {
     pkg.is_open() || code.is_some_and(|c| listed_for(pkg, c))
 }
 
-/// Downloads (resuming), checks, installs and activates a release; then removes old
-/// versions and refreshes the shortcuts. Returns the version folder.
-pub fn install_release(
+/// Downloads (resuming) the encrypted package of `release` for this platform into the
+/// downloads folder; returns it with the file. Nothing is checked yet besides the size.
+fn download_release<'a>(
     env: &Env,
     state: &LauncherState,
     product: &Product,
-    release: &Release,
+    release: &'a Release,
     code: Option<&AccessCode>,
     cancel: &AtomicBool,
     progress: &mut dyn FnMut(Progress),
-) -> Result<PathBuf> {
+) -> Result<(&'a Package, PathBuf)> {
     let pkg = release.package(&env.platform).ok_or_else(|| {
         Error::Install(format!(
             "a versão {} não tem pacote para {}",
@@ -184,6 +184,21 @@ pub fn install_release(
         3,
         Duration::from_secs(3),
     )?;
+    Ok((pkg, file))
+}
+
+/// Downloads (resuming), checks, installs and activates a release; then removes old
+/// versions and refreshes the shortcuts. Returns the version folder.
+pub fn install_release(
+    env: &Env,
+    state: &LauncherState,
+    product: &Product,
+    release: &Release,
+    code: Option<&AccessCode>,
+    cancel: &AtomicBool,
+    progress: &mut dyn FnMut(Progress),
+) -> Result<PathBuf> {
+    let (pkg, file) = download_release(env, state, product, release, code, cancel, progress)?;
     let dir = match install::install(&env.layout, &product.id, release, pkg, code, &file) {
         Ok(d) => d,
         Err(e) => {
@@ -212,6 +227,126 @@ pub fn install_release(
         product.id, release.version
     ));
     Ok(dir)
+}
+
+/// Version of this launcher.
+pub const VERSAO: &str = env!("CARGO_PKG_VERSION");
+
+/// Channel this launcher follows for its own updates: the one chosen for it, else the test
+/// channel when the tester follows it in some app, else the stable one.
+pub fn launcher_channel(state: &LauncherState) -> &str {
+    if let Some(c) = state.channels.get(manifest::LAUNCHER) {
+        return c;
+    }
+    if state.channels.values().any(|c| c == manifest::TESTING) {
+        manifest::TESTING
+    } else {
+        manifest::STABLE
+    }
+}
+
+/// The newer launcher this one can install, if any. Never for a development launcher (no
+/// public key built in), and only when its package opens without a code or with `code`.
+pub fn launcher_update<'a>(
+    env: &Env,
+    state: &LauncherState,
+    m: &'a Manifest,
+    running: &str,
+    code: Option<&AccessCode>,
+) -> Option<&'a Release> {
+    if env.trusted.is_empty() {
+        return None;
+    }
+    m.launcher_update(launcher_channel(state), &env.platform, running)
+        .filter(|r| {
+            r.package(&env.platform)
+                .is_some_and(|p| can_install(p, code))
+        })
+}
+
+/// Folder where the launcher's installer waits to be run (in the temporary folder).
+pub fn launcher_update_dir() -> PathBuf {
+    std::env::temp_dir().join("utsim-launcher-atualizacao")
+}
+
+/// Downloads the launcher's installer and checks it like any package (size and SHA-256 from
+/// the signed manifest, then authenticated decryption); only then copies it into `dest`
+/// (emptied first) and returns its path. A file that fails a check never reaches `dest`.
+#[allow(clippy::too_many_arguments)]
+pub fn prepare_launcher_update(
+    env: &Env,
+    state: &LauncherState,
+    product: &Product,
+    release: &Release,
+    code: Option<&AccessCode>,
+    dest: &Path,
+    cancel: &AtomicBool,
+    progress: &mut dyn FnMut(Progress),
+) -> Result<PathBuf> {
+    if env.trusted.is_empty() {
+        return Err(Error::Install(
+            "este é um launcher de desenvolvimento (sem chave pública); ele não se atualiza".into(),
+        ));
+    }
+    if product.id != manifest::LAUNCHER {
+        return Err(Error::Install(format!("'{}' não é o launcher", product.id)));
+    }
+    let name = Path::new(&release.executable)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    if !name.to_ascii_lowercase().ends_with(".exe") {
+        return Err(Error::Install(format!(
+            "o pacote do launcher deveria trazer um instalador .exe, não '{}'",
+            release.executable
+        )));
+    }
+    let (pkg, file) = download_release(env, state, product, release, code, cancel, progress)?;
+    let dir = match install::install(&env.layout, &product.id, release, pkg, code, &file) {
+        Ok(d) => d,
+        Err(e) => {
+            let _ = std::fs::remove_file(&file);
+            return Err(e);
+        }
+    };
+    let _ = std::fs::remove_file(&file);
+    let _ = std::fs::remove_dir_all(dest);
+    std::fs::create_dir_all(dest)?;
+    let installer = dest.join(&name);
+    let copied = std::fs::copy(dir.join(&release.executable), &installer);
+    // The extracted copy is not an app: it never stays in the products folder.
+    let _ = std::fs::remove_dir_all(env.layout.product(&product.id));
+    copied?;
+    env.log.line(&format!(
+        "instalador do launcher {} pronto em {}",
+        release.version,
+        installer.display()
+    ));
+    Ok(installer)
+}
+
+/// Starts the launcher's installer silently and detached (`/S /reabrir`): it waits for this
+/// launcher to close, overwrites it and opens the new one. The caller closes the window next.
+pub fn run_launcher_installer(installer: &Path) -> Result<()> {
+    let mut cmd = std::process::Command::new(installer);
+    cmd.args(["/S", "/reabrir"]);
+    if let Some(dir) = installer.parent() {
+        cmd.current_dir(dir);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const DETACHED_PROCESS: u32 = 0x0000_0008;
+        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+        cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+    }
+    cmd.spawn().map_err(|e| {
+        Error::Install(format!(
+            "não consegui abrir o instalador {} ({e})",
+            installer.display()
+        ))
+    })?;
+    Ok(())
 }
 
 /// Start-menu (and optionally desktop) shortcut pointing at `launcher --abrir <id>`.

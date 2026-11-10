@@ -6,10 +6,11 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use utsim_launcher::Env;
+use utsim_launcher::catalogo;
 use utsim_launcher_core::code::AccessCode;
 use utsim_launcher_core::crypto::Argon2Params;
 use utsim_launcher_core::install::{self, Layout};
-use utsim_launcher_core::manifest::{Manifest, Product, Release, STABLE};
+use utsim_launcher_core::manifest::{LAUNCHER, Manifest, Product, Release, STABLE, TESTING};
 use utsim_launcher_core::report::Log;
 use utsim_launcher_core::state::LauncherState;
 use utsim_launcher_core::transport::{self, Canned, HttpTransport, MemoryTransport, Transport};
@@ -186,4 +187,145 @@ fn development_build_has_no_trust() {
         let err = utsim_launcher::fetch_manifest(&e, &mut LauncherState::default()).unwrap_err();
         assert!(err.to_string().contains("chave pública embutida"), "{err}");
     }
+}
+
+/// The launcher's own release: an installer `.exe` in an open package (no code needed).
+fn launcher_release(dir: &Path, version: &str, url: &str) -> (Release, Vec<u8>) {
+    let src = dir.join(format!("launcher-{version}"));
+    fs::create_dir_all(&src).unwrap();
+    let exe = format!("utsim-launcher-v{version}-windows-x64-instalador.exe");
+    fs::write(src.join(&exe), format!("instalador {version}")).unwrap();
+    let zip = dir.join(format!("launcher-{version}.zip"));
+    package::zip_dir(&src, &zip).unwrap();
+    let file = dir
+        .join("pacotes")
+        .join(format!("launcher-{version}-{PLATFORM}.utpk"));
+    let sealed = package::seal_file(&zip, &file).unwrap();
+    let mut pkg = package::package_entry(PLATFORM, url, &sealed, Vec::new());
+    pkg.open_key = Some(sealed.key.to_base64());
+    let r = Release {
+        version: version.into(),
+        channel: STABLE.into(),
+        executable: exe,
+        packages: vec![pkg],
+        ..Release::default()
+    };
+    (r, fs::read(file).unwrap())
+}
+
+#[test]
+fn launcher_updates_itself_from_the_signed_manifest() {
+    let work = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let key = signature::generate().unwrap();
+    let code = AccessCode::generate().unwrap();
+    let t = Arc::new(MemoryTransport::new());
+    let (app, _) = release(work.path(), "0.1.0", &code, "http://drive.local/app");
+    let (lr, bytes) = launcher_release(work.path(), "0.2.0", "http://drive.local/launcher");
+    t.add("http://drive.local/launcher", Canned::file(bytes.clone()));
+    let mut m = manifest(1, vec![app]);
+    m.products.push(Product {
+        id: LAUNCHER.into(),
+        name: "UTSim Launcher".into(),
+        releases: vec![lr.clone()],
+        ..Product::default()
+    });
+    let env = env(home.path(), &key, t.clone(), MANIFEST_URL);
+    let state = LauncherState::default();
+
+    // Never an app card.
+    let items = catalogo::items(&m, &env.layout, &state, PLATFORM, None, "");
+    assert_eq!(
+        items.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(),
+        ["utsim"]
+    );
+    assert!(catalogo::items(&m, &env.layout, &state, PLATFORM, None, "launcher").is_empty());
+
+    // Offered only when newer than the running launcher, with or without a code.
+    let up = |running: &str| {
+        utsim_launcher::launcher_update(&env, &state, &m, running, None).map(|r| r.version.clone())
+    };
+    assert_eq!(up("0.1.2").as_deref(), Some("0.2.0"));
+    assert_eq!(up("0.2.0-dev").as_deref(), Some("0.2.0"));
+    assert_eq!(up("0.2.0"), None);
+    assert_eq!(up("0.3.0-rc1"), None);
+
+    // Downloaded, checked and copied to the temporary folder; nothing left among the apps.
+    let dest = work.path().join("atualizacao");
+    let stop = AtomicBool::new(false);
+    let p = m.product(LAUNCHER).unwrap();
+    let installer = utsim_launcher::prepare_launcher_update(
+        &env,
+        &state,
+        p,
+        &lr,
+        None,
+        &dest,
+        &stop,
+        &mut |_| {},
+    )
+    .unwrap();
+    assert_eq!(installer, dest.join(&lr.executable));
+    assert_eq!(fs::read_to_string(&installer).unwrap(), "instalador 0.2.0");
+    assert!(!env.layout.product(LAUNCHER).exists());
+    assert!(
+        !env.layout
+            .package_file(LAUNCHER, &lr, &lr.packages[0])
+            .exists()
+    );
+
+    // A package altered on the way (same size) never reaches the folder it is run from.
+    let mut bad = bytes;
+    let mid = bad.len() / 2;
+    bad[mid] ^= 0xff;
+    t.add("http://drive.local/launcher", Canned::file(bad));
+    let dest2 = work.path().join("atualizacao2");
+    let err = utsim_launcher::prepare_launcher_update(
+        &env,
+        &state,
+        p,
+        &lr,
+        None,
+        &dest2,
+        &stop,
+        &mut |_| {},
+    )
+    .unwrap_err();
+    assert!(matches!(err, Error::Integrity(_)), "{err}");
+    assert!(!dest2.exists());
+    assert!(
+        !env.layout
+            .package_file(LAUNCHER, &lr, &lr.packages[0])
+            .exists()
+    );
+
+    // A development launcher (no public key) never updates itself.
+    let mut dev = env;
+    dev.trusted.clear();
+    assert!(utsim_launcher::launcher_update(&dev, &state, &m, "0.1.0", None).is_none());
+    let dest3 = work.path().join("atualizacao3");
+    assert!(
+        utsim_launcher::prepare_launcher_update(
+            &dev,
+            &state,
+            p,
+            &lr,
+            None,
+            &dest3,
+            &stop,
+            &mut |_| {}
+        )
+        .is_err()
+    );
+    assert!(!dest3.exists());
+}
+
+#[test]
+fn launcher_channel_follows_the_tester() {
+    let mut s = LauncherState::default();
+    assert_eq!(utsim_launcher::launcher_channel(&s), STABLE);
+    s.channels.insert("utsim".into(), TESTING.into());
+    assert_eq!(utsim_launcher::launcher_channel(&s), TESTING);
+    s.channels.insert(LAUNCHER.into(), STABLE.into());
+    assert_eq!(utsim_launcher::launcher_channel(&s), STABLE);
 }

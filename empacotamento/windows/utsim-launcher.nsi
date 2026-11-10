@@ -2,6 +2,11 @@
 ;
 ; Instala por usuário, sem administrador, em %LOCALAPPDATA%\Programs\UTSim Launcher. O launcher
 ; instala os aplicativos da família em %LOCALAPPDATA%\UTSim\launcher (fora desta pasta).
+;
+; Atualização pelo próprio launcher: ele roda este instalador com "/S /reabrir". /S é o modo
+; silencioso do NSIS (a mesma pasta, lida do registro); /reabrir abre o launcher novo no fim.
+; Só a pasta do programa é sobrescrita: aplicativos, estado e código de acesso ficam em
+; %LOCALAPPDATA%\UTSim\launcher e não são tocados.
 ; Compilar com scripts/instalador-launcher.sh, que chama:
 ;   makensis /DVERSAO=0.1.0 /DEXE=<utsim-launcher.exe> /DICONE=<launcher.ico> /DSAIDA=<instalador.exe> utsim-launcher.nsi
 
@@ -24,6 +29,7 @@ Unicode true
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
+!include "FileFunc.nsh"
 
 Name "UTSim Launcher ${VERSAO}"
 OutFile "${SAIDA}"
@@ -60,6 +66,20 @@ VIAddVersionKey /LANG=${LANG_PORTUGUESEBR} "LegalCopyright" "Copyright (C) 2026 
 Section "UTSim Launcher" SecPrincipal
   SectionIn RO
   SetOutPath "$INSTDIR"
+  ; O launcher que pediu a atualização está fechando: espera o programa ficar livre (até 30 s).
+  StrCpy $0 0
+  ${Do}
+    ClearErrors
+    Delete "$INSTDIR\utsim-launcher.exe"
+    ${IfNot} ${Errors}
+      ${Break}
+    ${EndIf}
+    IntOp $0 $0 + 1
+    ${If} $0 >= 120
+      ${Break}
+    ${EndIf}
+    Sleep 250
+  ${Loop}
   File "/oname=utsim-launcher.exe" "${EXE}"
 
   WriteUninstaller "$INSTDIR\desinstalar.exe"
@@ -85,6 +105,16 @@ Section /o "Atalho na área de trabalho" SecDesktop
   SetShellVarContext current
   CreateShortcut "$DESKTOP\UTSim Launcher.lnk" "$INSTDIR\utsim-launcher.exe" "" "$INSTDIR\utsim-launcher.exe" 0
 SectionEnd
+
+; Depois da atualização silenciosa pedida pelo launcher (/reabrir), abre o launcher novo.
+Function .onInstSuccess
+  ${GetParameters} $R0
+  ClearErrors
+  ${GetOptions} $R0 "/reabrir" $R1
+  ${IfNot} ${Errors}
+    Exec '"$INSTDIR\utsim-launcher.exe"'
+  ${EndIf}
+FunctionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
   !insertmacro MUI_DESCRIPTION_TEXT ${SecPrincipal} "O launcher (um único programa)."

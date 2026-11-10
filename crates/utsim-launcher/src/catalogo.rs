@@ -259,7 +259,7 @@ pub fn item(
     }
 }
 
-/// Every product of `m`, filtered by `query` and sorted.
+/// Every app of `m` (not the launcher itself), filtered by `query` and sorted.
 pub fn items(
     m: &Manifest,
     layout: &Layout,
@@ -269,8 +269,7 @@ pub fn items(
     query: &str,
 ) -> Vec<Item> {
     let mut v: Vec<Item> = m
-        .products
-        .iter()
+        .apps()
         .map(|p| item(p, layout, state, platform, code))
         .filter(|i| i.matches(query))
         .collect();

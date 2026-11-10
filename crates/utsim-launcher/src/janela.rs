@@ -41,6 +41,8 @@ enum Outcome {
     Manifest(Result<(Manifest, LauncherState), String>),
     Installed(Result<String, String>),
     Message(Result<String, String>),
+    /// The launcher's installer, checked and waiting in the temporary folder.
+    LauncherReady(Result<std::path::PathBuf, String>),
 }
 
 /// A task running on another thread.
@@ -296,6 +298,53 @@ impl App {
         });
     }
 
+    /// The newer launcher offered at the top of the window, if any.
+    pub fn launcher_update(&self) -> Option<(Product, Release)> {
+        let m = self.manifest.as_ref()?;
+        let code = self.code();
+        let r = crate::launcher_update(&self.env, &self.state, m, crate::VERSAO, code.as_ref())?;
+        Some((m.product(manifest::LAUNCHER)?.clone(), r.clone()))
+    }
+
+    /// Downloads and checks the new launcher; [`Outcome::LauncherReady`] runs it.
+    fn start_launcher_update(&mut self, ctx: &Context) {
+        let Some((product, release)) = self.launcher_update() else {
+            return;
+        };
+        let code = self.code();
+        let task = Task::new(
+            format!("Baixando o launcher {}", release.version),
+            Some(product.id.clone()),
+        );
+        self.task = Some(Arc::clone(&task));
+        let env = Arc::clone(&self.env);
+        let state = self.state.clone();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let t = Arc::clone(&task);
+            let c = ctx.clone();
+            let mut progress = move |p: Progress| {
+                if let Ok(mut slot) = t.progress.lock() {
+                    *slot = Some(p);
+                }
+                c.request_repaint();
+            };
+            let r = crate::prepare_launcher_update(
+                &env,
+                &state,
+                &product,
+                &release,
+                code.as_ref(),
+                &crate::launcher_update_dir(),
+                &task.cancel,
+                &mut progress,
+            )
+            .map_err(|e| e.to_string());
+            task.finish(Outcome::LauncherReady(r));
+            ctx.request_repaint();
+        });
+    }
+
     fn update_all(&mut self, ctx: &Context) {
         let mut queue: Vec<(String, String)> = self
             .items()
@@ -376,7 +425,23 @@ impl App {
                 }
             }
             Outcome::Message(Ok(msg)) => self.set_status(msg, false),
-            Outcome::Installed(Err(e)) | Outcome::Message(Err(e)) => {
+            Outcome::LauncherReady(Ok(installer)) => {
+                match crate::run_launcher_installer(&installer) {
+                    Ok(()) => {
+                        self.env.log.line(
+                            "instalador do launcher aberto; o launcher fecha para ser trocado",
+                        );
+                        self.save_state();
+                        self.set_status("Atualizando o launcher; ele reabre sozinho.", false);
+                        // Closing frees the program's file for the installer.
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    Err(e) => self.set_status(e.to_string(), true),
+                }
+            }
+            Outcome::Installed(Err(e))
+            | Outcome::Message(Err(e))
+            | Outcome::LauncherReady(Err(e)) => {
                 self.queue.clear();
                 if cancelled {
                     self.set_status(
@@ -834,6 +899,7 @@ impl App {
 
     fn main_area(&mut self, ui: &mut Ui, icon_alpha: f32) {
         let items = self.items();
+        self.launcher_banner(ui);
         self.toolbar(ui, &items);
         let body = ui.available_rect_before_wrap();
         let Some(m) = &self.manifest else {
@@ -880,7 +946,7 @@ impl App {
             return;
         };
         if items.is_empty() {
-            let text = if m.products.is_empty() {
+            let text = if m.apps().next().is_none() {
                 "A lista não tem aplicativos ainda.".to_string()
             } else {
                 format!(
@@ -1023,6 +1089,60 @@ impl App {
     }
 
     /// The strip that lists the updates waiting, with "Atualizar todos".
+    /// "Nova versão do launcher X.Y.Z — Atualizar", above everything (not a modal). While it
+    /// downloads, the progress takes the place of the button.
+    fn launcher_banner(&mut self, ui: &mut Ui) {
+        let Some((_, release)) = self.launcher_update() else {
+            return;
+        };
+        ui.add_space(10.0);
+        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 52.0), Sense::hover());
+        let p = ui.painter().clone();
+        p.rect(
+            r,
+            CornerRadius::same(10),
+            cores::DESTAQUE.gamma_multiply(0.08),
+            Stroke::new(1.0, cores::DESTAQUE.gamma_multiply(0.5)),
+            StrokeKind::Inside,
+        );
+        let bw = 150.0;
+        let button = Rect::from_min_size(
+            pos2(r.right() - 14.0 - bw, r.center().y - 17.0),
+            vec2(bw, 34.0),
+        );
+        let x = r.left() + 18.0;
+        let text = format!(
+            "Nova versão do launcher {}  (você usa a {})",
+            release.version,
+            crate::VERSAO
+        );
+        p.galley(
+            pos2(x, r.center().y - 9.0),
+            p.layout_job(familia::linha(
+                &text,
+                familia::sans(14.0),
+                cores::TEXTO,
+                button.left() - x - 16.0,
+            )),
+            Color32::WHITE,
+        );
+        let running = self
+            .task
+            .as_ref()
+            .filter(|t| t.product.as_deref() == Some(manifest::LAUNCHER))
+            .map(|t| t.fraction());
+        if let Some(frac) = running {
+            let bar = Rect::from_min_size(pos2(button.left(), r.center().y - 2.0), vec2(bw, 4.0));
+            progress_bar(ui, bar, frac);
+            ui.ctx().request_repaint();
+        } else if familia::botao_em(ui, button, "Atualizar", Botao::Primario, !self.busy())
+            .clicked()
+        {
+            self.start_launcher_update(ui.ctx());
+        }
+        ui.add_space(4.0);
+    }
+
     fn updates_banner(&mut self, ui: &mut Ui, items: &[Item]) {
         let ups: Vec<&Item> = items.iter().filter(|i| i.has_update()).collect();
         if ups.is_empty() {

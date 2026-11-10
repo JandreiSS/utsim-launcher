@@ -2,7 +2,7 @@
 # Gera o UTSim Launcher em release e o instalador dele para Windows (NSIS).
 #
 # Uso: bash scripts/instalador-launcher.sh [versão] [pasta_de_saída]
-#   versão          padrão: a de Cargo.toml. Um prefixo "v" e sufixos como "-rc1" são ignorados no NSIS.
+#   versão          padrão: a de crates/utsim-launcher/Cargo.toml. Um prefixo "v" e sufixos como "-rc1" são ignorados no NSIS.
 #   pasta_de_saída  padrão: dist
 #
 # A confiança embutida vem de crates/utsim-launcher/confianca/ (ou de UTSIM_CHAVE_PUBLICA e
@@ -15,7 +15,7 @@ set -eu
 
 cd "$(dirname "$0")/.." || exit 1
 
-VERSAO=${1:-$(awk -F'"' '/^version = /{print $2; exit}' Cargo.toml)}
+VERSAO=${1:-$(awk -F'"' '/^version = /{print $2; exit}' crates/utsim-launcher/Cargo.toml)}
 VERSAO=${VERSAO#v}
 ROTULO=$VERSAO
 VERSAO=${VERSAO%%-*}

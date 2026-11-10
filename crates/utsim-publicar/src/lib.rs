@@ -502,6 +502,17 @@ pub fn publish(
             req.executable
         )));
     }
+    // The launcher's own package is its NSIS installer, run silently by the launcher.
+    if req.product == manifest::LAUNCHER
+        && (req.executable.contains(['/', '\\'])
+            || !req.executable.to_ascii_lowercase().ends_with(".exe"))
+    {
+        return Err(Error::Format(format!(
+            "o produto '{}' publica o instalador do launcher (um .exe na raiz do pacote), não '{}'",
+            manifest::LAUNCHER,
+            req.executable
+        )));
+    }
     let key = store.signing_key()?;
     let mut m = out.load(&key)?;
     if let Some(p) = m.product(&req.product) {
