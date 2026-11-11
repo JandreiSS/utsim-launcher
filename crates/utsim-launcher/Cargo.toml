@@ -3,7 +3,7 @@ name = "utsim-launcher"
 description = "Launcher of the UTSim family: access code, products and channels, signed updates"
 # Its own version: the installed launcher updates itself when the manifest has a newer one
 # (scripts/publicar-launcher.sh refuses to publish any other version).
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 # eframe 0.36 needs Rust 1.95.
 rust-version = "1.95"

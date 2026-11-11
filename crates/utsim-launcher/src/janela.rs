@@ -15,8 +15,8 @@ use utsim_launcher_core::code::AccessCode;
 use utsim_launcher_core::download::Progress;
 use utsim_launcher_core::install;
 use utsim_launcher_core::manifest::{self, Manifest, Product, Release};
-use utsim_launcher_core::state::{self, LauncherState, SortOrder, ViewMode};
-use utsim_ui_tema::familia::{self, Botao, Icone, cores};
+use utsim_launcher_core::state::{self, LauncherState, SortOrder, Theme, ViewMode};
+use utsim_ui_tema::familia::{self, Botao, Icone, paleta};
 
 use crate::Env;
 use crate::abertura::{self, Intro, IntroState, Voo};
@@ -28,6 +28,19 @@ pub const CARD_H: f32 = 272.0;
 pub const CARD_MIN_W: f32 = 330.0;
 /// Height of a row in the list.
 pub const ROW_H: f32 = 68.0;
+/// Versions listed directly in a product's "…" menu; the rest go under "Mais versões".
+const MENU_VERSIONS: usize = 5;
+/// Height of the "Mais versões" list before it scrolls.
+const MENU_MORE_H: f32 = 320.0;
+
+/// What every version button of the "…" menu needs.
+struct MenuVersions<'a> {
+    item: &'a Item,
+    installed: &'a [String],
+    platform: &'a str,
+    code: Option<&'a AccessCode>,
+    busy: bool,
+}
 const TOP_H: f32 = 56.0;
 /// Side of the logo in the top bar.
 const LOGO: f32 = 32.0;
@@ -483,6 +496,7 @@ impl App {
         let ctx = ui.ctx().clone();
         self.poll_task(&ctx);
         self.slots.clear();
+        self.apply_theme(&ctx);
 
         // The opening animation: any key or click skips it; the system's "less motion" too.
         let now = ui.input(|i| i.time);
@@ -513,21 +527,21 @@ impl App {
 
         if self.editing_code {
             egui::CentralPanel::default()
-                .frame(Frame::NONE.fill(cores::FUNDO))
+                .frame(Frame::NONE.fill(paleta().fundo))
                 .show(ui, |ui| self.code_screen(ui));
         } else {
             egui::Panel::top("topo")
                 .exact_size(TOP_H)
-                .frame(Frame::NONE.fill(cores::FUNDO))
+                .frame(Frame::NONE.fill(paleta().fundo))
                 .show(ui, |ui| self.top_bar(ui));
             egui::Panel::bottom("rodape")
                 .exact_size(FOOT_H)
-                .frame(Frame::NONE.fill(cores::FUNDO))
+                .frame(Frame::NONE.fill(paleta().fundo))
                 .show(ui, |ui| self.footer(ui));
             egui::CentralPanel::default()
                 .frame(
                     Frame::NONE
-                        .fill(cores::FUNDO)
+                        .fill(paleta().fundo)
                         .inner_margin(Margin::symmetric(PAD as i8, 0)),
                 )
                 .show(ui, |ui| self.main_area(ui, icon_alpha));
@@ -559,17 +573,17 @@ impl App {
         ui.scope_builder(UiBuilder::new().max_rect(col), |ui| {
             ui.spacing_mut().item_spacing.y = 10.0;
             ui.horizontal(|ui| {
-                ui.label(familia::espacado("UTSIM", familia::negrito(22.0), cores::BRANCO, 4.0));
+                ui.label(familia::espacado("UTSIM", familia::negrito(22.0), paleta().branco, 4.0));
                 ui.add_space(12.0);
-                ui.label(familia::espacado("FAMÍLIA DE APPS", familia::mono(11.0), cores::TEXTO_FRACO, 2.5));
+                ui.label(familia::espacado("FAMÍLIA DE APPS", familia::mono(11.0), paleta().texto_fraco, 2.5));
             });
             ui.add_space(18.0);
-            familia::rotulo(ui, "Código de acesso", 11.0, cores::TEXTO_APAGADO);
+            familia::rotulo(ui, "Código de acesso", 11.0, paleta().texto_apagado);
             ui.label(
                 egui::RichText::new(
                     "Digite o código que você recebeu do autor. Ele tem 20 letras e números, como ABCD-EFGH-JKMN-PQRS-TVWX.",
                 )
-                .color(cores::TEXTO_FRACO),
+                .color(paleta().texto_fraco),
             );
             let edit = ui.add(
                 egui::TextEdit::singleline(&mut self.code_input)
@@ -600,14 +614,14 @@ impl App {
                 self.accept_code(ui.ctx());
             }
             if let Some(e) = &self.code_error {
-                ui.colored_label(cores::ERRO, e);
+                ui.colored_label(paleta().erro, e);
             }
             ui.add_space(12.0);
             let no_builtin = crate::built_in_manifest_url().is_empty();
-            egui::CollapsingHeader::new(familia::espacado("AVANÇADO", familia::mono(11.0), cores::TEXTO_FRACO, 2.0))
+            egui::CollapsingHeader::new(familia::espacado("AVANÇADO", familia::mono(11.0), paleta().texto_fraco, 2.0))
                 .default_open(no_builtin)
                 .show(ui, |ui| {
-                    ui.label(egui::RichText::new("Endereço da lista de versões (só se o autor pedir):").color(cores::TEXTO_FRACO));
+                    ui.label(egui::RichText::new("Endereço da lista de versões (só se o autor pedir):").color(paleta().texto_fraco));
                     ui.add(
                         egui::TextEdit::singleline(&mut self.url_input)
                             .hint_text("link do manifesto.json no Google Drive")
@@ -619,7 +633,7 @@ impl App {
             ui.label(
                 egui::RichText::new("O código fica guardado só neste computador, na sua pasta de usuário. Aplicativos abertos para todos não pedem código.")
                     .size(12.0)
-                    .color(cores::TEXTO_APAGADO),
+                    .color(paleta().texto_apagado),
             );
         });
     }
@@ -658,7 +672,7 @@ impl App {
                 r.left_bottom() + vec2(0.0, -0.5),
                 r.right_bottom() + vec2(0.0, -0.5),
             ],
-            Stroke::new(1.0, cores::LINHA),
+            Stroke::new(1.0, paleta().linha),
         );
         // The official logo (the three gears), then the wordmark.
         let logo = Rect::from_min_size(
@@ -676,12 +690,12 @@ impl App {
         let mark = familia::pintar_texto(
             &p,
             pos2(logo.right() + 12.0, r.center().y),
-            familia::espacado("UTSIM", familia::negrito(17.0), cores::BRANCO, 3.5),
+            familia::espacado("UTSIM", familia::negrito(17.0), paleta().branco, 3.5),
         );
         let x = mark.right() + 22.0;
         p.line_segment(
             [pos2(x, r.top()), pos2(x, r.bottom() - 1.0)],
-            Stroke::new(1.0, cores::LINHA),
+            Stroke::new(1.0, paleta().linha),
         );
         familia::pintar_texto(
             &p,
@@ -689,7 +703,7 @@ impl App {
             familia::espacado(
                 "FAMÍLIA DE APPS",
                 familia::mono(11.0),
-                cores::TEXTO_FRACO,
+                paleta().texto_fraco,
                 2.6,
             ),
         );
@@ -697,19 +711,19 @@ impl App {
         let gear = Rect::from_min_size(pos2(r.right() - TOP_H, r.top()), vec2(TOP_H, TOP_H - 1.0));
         p.line_segment(
             [gear.left_top(), gear.left_bottom()],
-            Stroke::new(1.0, cores::LINHA),
+            Stroke::new(1.0, paleta().linha),
         );
         let resp = ui
             .allocate_rect(gear, Sense::click())
             .on_hover_text("Configurações");
         if resp.hovered() {
-            p.rect_filled(gear.shrink2(vec2(0.5, 0.0)), 0.0, cores::SOBRE);
+            p.rect_filled(gear.shrink2(vec2(0.5, 0.0)), 0.0, paleta().sobre);
         }
         familia::pintar_icone(
             &p,
             Rect::from_center_size(gear.center(), Vec2::splat(18.0)),
             Icone::Engrenagem,
-            cores::TEXTO,
+            paleta().texto,
         );
         if resp.clicked() {
             self.settings_open = true;
@@ -724,7 +738,7 @@ impl App {
         let g = p.layout_job(familia::espacado(
             &text,
             familia::mono(10.5),
-            cores::TEXTO_FRACO,
+            paleta().texto_fraco,
             1.6,
         ));
         let chip = Rect::from_min_size(
@@ -741,22 +755,22 @@ impl App {
                     "Inserir um código de testador para ver os aplicativos em teste"
                 });
             let fill = if resp.hovered() && !busy {
-                cores::SOBRE
+                paleta().sobre
             } else {
-                cores::FUNDO
+                paleta().fundo
             };
             p.rect(
                 chip,
                 CornerRadius::same(14),
                 fill,
-                Stroke::new(1.0, cores::LINHA),
+                Stroke::new(1.0, paleta().linha),
                 StrokeKind::Inside,
             );
             let dot = pos2(chip.left() + 12.0, chip.center().y);
             let on = if code.is_some() {
-                cores::VERDE
+                paleta().verde
             } else {
-                cores::TEXTO_APAGADO
+                paleta().texto_apagado
             };
             p.circle_filled(dot, 3.0, on);
             p.galley(
@@ -787,8 +801,8 @@ impl App {
         let modal = egui::Modal::new(Id::new("configuracoes"))
             .frame(
                 Frame::NONE
-                    .fill(cores::SUPERFICIE)
-                    .stroke(Stroke::new(1.0, cores::LINHA_FORTE))
+                    .fill(paleta().superficie)
+                    .stroke(Stroke::new(1.0, paleta().linha_forte))
                     .corner_radius(CornerRadius::same(10))
                     .inner_margin(Margin::same(24)),
             )
@@ -797,7 +811,7 @@ impl App {
                 ui.label(
                     egui::RichText::new("Configurações")
                         .font(familia::negrito(20.0))
-                        .color(cores::BRANCO),
+                        .color(paleta().branco),
                 );
                 ui.add_space(4.0);
                 self.settings_body(ui);
@@ -813,10 +827,10 @@ impl App {
         let busy = self.busy();
         let section = |ui: &mut Ui, title: &str| {
             ui.add_space(14.0);
-            familia::rotulo(ui, title, 10.5, cores::TEXTO_APAGADO);
+            familia::rotulo(ui, title, 10.5, paleta().texto_apagado);
             ui.add_space(2.0);
         };
-        let weak = |t: String| egui::RichText::new(t).color(cores::TEXTO_FRACO);
+        let weak = |t: String| egui::RichText::new(t).color(paleta().texto_fraco);
 
         section(ui, "Testador");
         let code = self.code();
@@ -865,6 +879,23 @@ impl App {
             self.refresh(ui.ctx());
         }
 
+        section(ui, "Aparência");
+        let mut theme = self.state.theme;
+        ui.horizontal(|ui| {
+            for (t, name) in [
+                (Theme::Dark, "Escuro"),
+                (Theme::Light, "Claro"),
+                (Theme::System, "Seguir o Windows"),
+            ] {
+                ui.radio_value(&mut theme, t, name);
+            }
+        });
+        if theme != self.state.theme {
+            self.state.theme = theme;
+            self.save_state();
+            self.apply_theme(ui.ctx());
+        }
+
         section(ui, "Abertura");
         let mut intro = !self.state.skip_intro;
         if ui
@@ -893,7 +924,7 @@ impl App {
         ui.label(
             egui::RichText::new(format!("UTSim Launcher {}", env!("CARGO_PKG_VERSION")))
                 .size(11.5)
-                .color(cores::TEXTO_APAGADO),
+                .color(paleta().texto_apagado),
         );
     }
 
@@ -914,7 +945,7 @@ impl App {
                             "Nenhuma lista de aplicativos ainda."
                         })
                         .size(15.0)
-                        .color(cores::TEXTO_FRACO),
+                        .color(paleta().texto_fraco),
                     );
                     ui.add_space(12.0);
                     if !busy
@@ -960,7 +991,7 @@ impl App {
                     ui.label(
                         egui::RichText::new(text)
                             .size(15.0)
-                            .color(cores::TEXTO_FRACO),
+                            .color(paleta().texto_fraco),
                     );
                 });
             });
@@ -1054,11 +1085,11 @@ impl App {
         let title = p.layout_no_wrap(
             "Aplicativos".to_string(),
             familia::negrito(22.0),
-            cores::BRANCO,
+            paleta().branco,
         );
         if bar.left() + title.size().x + 16.0 < x {
             let top = bar.center().y - 24.0;
-            p.galley(pos2(bar.left(), top), title, cores::BRANCO);
+            p.galley(pos2(bar.left(), top), title, paleta().branco);
             let installed = items.iter().filter(|i| i.active.is_some()).count();
             let updates = items.iter().filter(|i| i.has_update()).count();
             let mut parts = vec![
@@ -1080,7 +1111,7 @@ impl App {
                 p.layout_job(familia::linha(
                     &parts.join(" · "),
                     familia::sans(13.0),
-                    cores::TEXTO_FRACO,
+                    paleta().texto_fraco,
                     x - bar.left() - 16.0,
                 )),
                 Color32::WHITE,
@@ -1101,8 +1132,8 @@ impl App {
         p.rect(
             r,
             CornerRadius::same(10),
-            cores::DESTAQUE.gamma_multiply(0.08),
-            Stroke::new(1.0, cores::DESTAQUE.gamma_multiply(0.5)),
+            paleta().destaque.gamma_multiply(0.08),
+            Stroke::new(1.0, paleta().destaque.gamma_multiply(0.5)),
             StrokeKind::Inside,
         );
         let bw = 150.0;
@@ -1121,7 +1152,7 @@ impl App {
             p.layout_job(familia::linha(
                 &text,
                 familia::sans(14.0),
-                cores::TEXTO,
+                paleta().texto,
                 button.left() - x - 16.0,
             )),
             Color32::WHITE,
@@ -1154,8 +1185,8 @@ impl App {
         p.rect(
             r,
             CornerRadius::same(10),
-            cores::AMARELO.gamma_multiply(0.07),
-            Stroke::new(1.0, cores::AMARELO.gamma_multiply(0.45)),
+            paleta().amarelo.gamma_multiply(0.07),
+            Stroke::new(1.0, paleta().amarelo.gamma_multiply(0.45)),
             StrokeKind::Inside,
         );
         let n = ups.len();
@@ -1173,7 +1204,7 @@ impl App {
         familia::pintar_texto(
             &p,
             pos2(x, r.top() + 19.0),
-            familia::espacado(&head, familia::mono_negrito(11.0), cores::AMARELO, 1.6),
+            familia::espacado(&head, familia::mono_negrito(11.0), paleta().amarelo, 1.6),
         );
         let list = ups
             .iter()
@@ -1193,7 +1224,7 @@ impl App {
             p.layout_job(familia::linha(
                 &list,
                 familia::sans(13.0),
-                cores::TEXTO,
+                paleta().texto,
                 button.left() - x - 16.0,
             )),
             Color32::WHITE,
@@ -1225,7 +1256,7 @@ impl App {
                 ui,
                 &format!("{title} · {}", group.len()),
                 11.0,
-                cores::TEXTO_FRACO,
+                paleta().texto_fraco,
             );
             ui.add_space(8.0);
             let w = ui.available_width();
@@ -1289,16 +1320,16 @@ impl App {
             cell,
             CornerRadius::same(10),
             if over {
-                cores::SOBRE
+                paleta().sobre
             } else {
-                cores::SUPERFICIE
+                paleta().superficie
             },
             Stroke::new(
                 1.0,
                 if over {
-                    cores::LINHA_FORTE
+                    paleta().linha_forte
                 } else {
-                    cores::LINHA
+                    paleta().linha
                 },
             ),
             StrokeKind::Inside,
@@ -1321,7 +1352,7 @@ impl App {
         let tg = p.layout_job(familia::espacado(
             &tag,
             familia::mono(9.5),
-            cores::TEXTO_FRACO,
+            paleta().texto_fraco,
             1.2,
         ));
         if name_rect.right() + 10.0 + tg.size().x + 10.0 <= cell.right() - PAD {
@@ -1329,7 +1360,7 @@ impl App {
                 &p,
                 pos2(name_rect.right() + 10.0, name_rect.center().y + 1.0),
                 &tag,
-                cores::TEXTO_FRACO,
+                paleta().texto_fraco,
                 9.5,
             );
         }
@@ -1338,7 +1369,7 @@ impl App {
             p.layout_job(familia::linha(
                 &item.subtitle,
                 familia::sans(13.5),
-                cores::TEXTO_FRACO,
+                paleta().texto_fraco,
                 name_w,
             )),
             Color32::WHITE,
@@ -1358,7 +1389,7 @@ impl App {
                 &p,
                 pos2(b.right() + 8.0, by),
                 "Aberto para todos",
-                cores::VERDE,
+                paleta().verde,
                 10.5,
             );
         }
@@ -1367,7 +1398,7 @@ impl App {
             p.layout_job(familia::paragrafo(
                 &item.description,
                 familia::sans(13.5),
-                cores::TEXTO,
+                paleta().texto,
                 inner_w,
                 2,
             )),
@@ -1381,7 +1412,7 @@ impl App {
         let ly = vy - 17.0;
         p.line_segment(
             [pos2(left, ly - 13.0), pos2(cell.right() - PAD, ly - 13.0)],
-            Stroke::new(1.0, cores::LINHA),
+            Stroke::new(1.0, paleta().linha),
         );
         let col = inner_w / 3.6;
         let newest = item.latest.as_ref().map(|r| r.version.clone());
@@ -1390,16 +1421,16 @@ impl App {
                 "Instalada",
                 item.active.clone().unwrap_or_else(|| "—".into()),
                 if item.active.is_some() {
-                    cores::TEXTO
+                    paleta().texto
                 } else {
-                    cores::TEXTO_APAGADO
+                    paleta().texto_apagado
                 },
             ),
             (
                 "Mais nova",
                 newest.unwrap_or_else(|| "—".into()),
                 if item.has_update() {
-                    cores::AMARELO
+                    paleta().amarelo
                 } else {
                     acc
                 },
@@ -1407,7 +1438,7 @@ impl App {
             (
                 "Publicada",
                 item.release_date().unwrap_or_else(|| "—".into()),
-                cores::TEXTO_FRACO,
+                paleta().texto_fraco,
             ),
         ];
         for (k, (label, value, color)) in columns.into_iter().enumerate() {
@@ -1423,7 +1454,7 @@ impl App {
                 familia::espacado(
                     &label.to_uppercase(),
                     familia::mono(9.5),
-                    cores::TEXTO_APAGADO,
+                    paleta().texto_apagado,
                     1.4,
                 ),
             );
@@ -1439,7 +1470,7 @@ impl App {
             let g = p.layout_job(familia::espacado(
                 "NOTAS ↗",
                 familia::mono(10.5),
-                cores::TEXTO_FRACO,
+                paleta().texto_fraco,
                 1.6,
             ));
             let r = Rect::from_min_size(
@@ -1451,9 +1482,9 @@ impl App {
                 .allocate_rect(r, Sense::click())
                 .on_hover_text("Notas da versão");
             let color = if resp.hovered() {
-                cores::BRANCO
+                paleta().branco
             } else {
-                cores::TEXTO_FRACO
+                paleta().texto_fraco
             };
             p.galley(r.min + vec2(4.0, 4.0), g, color);
             if resp.clicked() {
@@ -1543,6 +1574,25 @@ impl App {
         }
     }
 
+    /// Draws the "…" menu of product `id` into `ui` (its pictures in the tests).
+    pub fn product_menu_of(&mut self, ui: &mut Ui, id: &str) {
+        if let Some(item) = self.items().into_iter().find(|i| i.id == id) {
+            self.product_menu(ui, &item);
+        }
+    }
+
+    /// Light or dark palette as the settings say ("Seguir o Windows" reads the system's).
+    fn apply_theme(&self, ctx: &Context) {
+        let light = match self.state.theme {
+            Theme::Dark => false,
+            Theme::Light => true,
+            Theme::System => ctx.system_theme() == Some(egui::Theme::Light),
+        };
+        if light != familia::tema_claro() {
+            familia::usar_claro(ctx, light);
+        }
+    }
+
     fn product_menu(&mut self, ui: &mut Ui, item: &Item) {
         ui.set_min_width(260.0);
         let busy = self.busy();
@@ -1566,7 +1616,7 @@ impl App {
             ui.close();
         }
         ui.separator();
-        familia::rotulo(ui, "Canal", 10.5, cores::TEXTO_APAGADO);
+        familia::rotulo(ui, "Canal", 10.5, paleta().texto_apagado);
         let mut channels = product.channels();
         for c in [manifest::STABLE, manifest::TESTING] {
             if !channels.iter().any(|x| x == c) {
@@ -1581,61 +1631,9 @@ impl App {
             self.state.channels.insert(item.id.clone(), channel.clone());
             self.save_state();
         }
-        ui.separator();
-        familia::rotulo(ui, "Versões", 10.5, cores::TEXTO_APAGADO);
         let installed = install::installed_versions(&layout, &item.id);
-        for r in product.visible(&channel) {
-            let is_active = item.active.as_deref() == Some(r.version.as_str());
-            let is_installed = installed.contains(&r.version);
-            let pkg = r.package(&platform);
-            let can = pkg.is_some_and(|p| crate::can_install(p, code.as_ref()));
-            let tag = if r.channel != manifest::STABLE {
-                format!(" · {}", channel_name(&r.channel))
-            } else {
-                String::new()
-            };
-            if is_active {
-                ui.add_enabled(
-                    false,
-                    egui::Button::new(format!("{}{tag} (ativa)", r.version)),
-                );
-            } else if is_installed {
-                if ui
-                    .add_enabled(
-                        !busy,
-                        egui::Button::new(format!("Usar a {}{tag}", r.version)),
-                    )
-                    .clicked()
-                {
-                    match install::activate(&layout, &item.id, &r.version) {
-                        Ok(()) => {
-                            self.set_status(format!("{} {} ativa.", item.name, r.version), false)
-                        }
-                        Err(e) => self.set_status(e.to_string(), true),
-                    }
-                    ui.close();
-                }
-            } else {
-                let why = if pkg.is_none() {
-                    " (sem pacote para este sistema)"
-                } else if !can {
-                    " (sem acesso)"
-                } else {
-                    ""
-                };
-                if ui
-                    .add_enabled(
-                        !busy && can,
-                        egui::Button::new(format!("Instalar a {}{tag}{why}", r.version)),
-                    )
-                    .clicked()
-                {
-                    let v = r.version.clone();
-                    self.start_install(ui.ctx(), &item.id, &v);
-                    ui.close();
-                }
-            }
-        }
+        // Removing and uninstalling come before the versions, so they stay in reach however
+        // many versions there are.
         if item.active.is_some() {
             ui.separator();
             let olds = installed.len().saturating_sub(1);
@@ -1656,11 +1654,91 @@ impl App {
             if ui
                 .add_enabled(
                     !busy,
-                    egui::Button::new(egui::RichText::new("Desinstalar...").color(cores::ERRO)),
+                    egui::Button::new(egui::RichText::new("Desinstalar...").color(paleta().erro)),
                 )
                 .clicked()
             {
                 self.confirm_uninstall = Some(item.id.clone());
+                ui.close();
+            }
+        }
+        ui.separator();
+        familia::rotulo(ui, "Versões", 10.5, paleta().texto_apagado);
+        let releases = product.visible(&channel);
+        let ctx = MenuVersions {
+            item,
+            installed: &installed,
+            platform: &platform,
+            code: code.as_ref(),
+            busy,
+        };
+        for r in releases.iter().take(MENU_VERSIONS) {
+            self.version_button(ui, &ctx, r);
+        }
+        let more = releases.len().saturating_sub(MENU_VERSIONS);
+        if more > 0 {
+            ui.menu_button(format!("Mais versões ({more})"), |ui| {
+                ui.set_min_width(260.0);
+                egui::ScrollArea::vertical()
+                    .max_height(MENU_MORE_H)
+                    .show(ui, |ui| {
+                        for r in releases.iter().skip(MENU_VERSIONS) {
+                            self.version_button(ui, &ctx, r);
+                        }
+                    });
+            });
+        }
+    }
+
+    /// One version in the "…" menu: active, use it, or install it.
+    fn version_button(&mut self, ui: &mut Ui, m: &MenuVersions, r: &Release) {
+        let layout = self.env.layout.clone();
+        let item = m.item;
+        let is_active = item.active.as_deref() == Some(r.version.as_str());
+        let is_installed = m.installed.contains(&r.version);
+        let pkg = r.package(m.platform);
+        let can = pkg.is_some_and(|p| crate::can_install(p, m.code));
+        let tag = if r.channel != manifest::STABLE {
+            format!(" · {}", channel_name(&r.channel))
+        } else {
+            String::new()
+        };
+        if is_active {
+            ui.add_enabled(
+                false,
+                egui::Button::new(format!("{}{tag} (ativa)", r.version)),
+            );
+        } else if is_installed {
+            if ui
+                .add_enabled(
+                    !m.busy,
+                    egui::Button::new(format!("Usar a {}{tag}", r.version)),
+                )
+                .clicked()
+            {
+                match install::activate(&layout, &item.id, &r.version) {
+                    Ok(()) => self.set_status(format!("{} {} ativa.", item.name, r.version), false),
+                    Err(e) => self.set_status(e.to_string(), true),
+                }
+                ui.close();
+            }
+        } else {
+            let why = if pkg.is_none() {
+                " (sem pacote para este sistema)"
+            } else if !can {
+                " (sem acesso)"
+            } else {
+                ""
+            };
+            if ui
+                .add_enabled(
+                    !m.busy && can,
+                    egui::Button::new(format!("Instalar a {}{tag}{why}", r.version)),
+                )
+                .clicked()
+            {
+                let v = r.version.clone();
+                self.start_install(ui.ctx(), &item.id, &v);
                 ui.close();
             }
         }
@@ -1678,7 +1756,7 @@ impl App {
         p.rect_stroke(
             table,
             0.0,
-            Stroke::new(1.0, cores::LINHA),
+            Stroke::new(1.0, paleta().linha),
             egui::StrokeKind::Inside,
         );
         let cols = Columns::new(table);
@@ -1687,7 +1765,7 @@ impl App {
             familia::pintar_texto(
                 &p,
                 pos2(x, hy),
-                familia::espacado(t, familia::mono(10.5), cores::TEXTO_APAGADO, 2.2),
+                familia::espacado(t, familia::mono(10.5), paleta().texto_apagado, 2.2),
             );
         };
         label(cols.app, "APLICATIVO");
@@ -1706,7 +1784,7 @@ impl App {
                 pos2(table.left(), table.top() + head_h),
                 pos2(table.right(), table.top() + head_h),
             ],
-            Stroke::new(1.0, cores::LINHA),
+            Stroke::new(1.0, paleta().linha),
         );
         for (k, item) in items.iter().enumerate() {
             let row = Rect::from_min_size(
@@ -1716,7 +1794,7 @@ impl App {
             if k + 1 < items.len() {
                 p.line_segment(
                     [row.left_bottom(), row.right_bottom()],
-                    Stroke::new(1.0, cores::LINHA),
+                    Stroke::new(1.0, paleta().linha),
                 );
             }
             ui.push_id(&item.id, |ui| self.row(ui, row, &cols, item, icon_alpha));
@@ -1737,7 +1815,7 @@ impl App {
             p.layout_job(familia::linha(
                 &item.subtitle,
                 familia::sans(12.5),
-                cores::TEXTO_FRACO,
+                paleta().texto_fraco,
                 name_w,
             )),
             Color32::WHITE,
@@ -1761,12 +1839,12 @@ impl App {
         };
         match (&old, &new) {
             (Some(o), Some(n)) => {
-                job.append(o, 0.0, fmt(cores::TEXTO));
-                job.append(" → ", 0.0, fmt(cores::TEXTO_FRACO));
+                job.append(o, 0.0, fmt(paleta().texto));
+                job.append(" → ", 0.0, fmt(paleta().texto_fraco));
                 job.append(n, 0.0, fmt(acc));
             }
-            (None, Some(n)) => job.append(n, 0.0, fmt(cores::TEXTO)),
-            _ => job.append("—", 0.0, fmt(cores::TEXTO_APAGADO)),
+            (None, Some(n)) => job.append(n, 0.0, fmt(paleta().texto)),
+            _ => job.append("—", 0.0, fmt(paleta().texto_apagado)),
         }
         familia::pintar_texto(&p, pos2(cols.version, cy), job);
         if let Some(x) = cols.date {
@@ -1774,14 +1852,19 @@ impl App {
             familia::pintar_texto(
                 &p,
                 pos2(x, cy),
-                familia::linha(&d, familia::sans(13.0), cores::TEXTO_FRACO, 150.0),
+                familia::linha(&d, familia::sans(13.0), paleta().texto_fraco, 150.0),
             );
         }
         if let Some(x) = cols.author {
             familia::pintar_texto(
                 &p,
                 pos2(x, cy),
-                familia::linha(&item.author, familia::sans(13.0), cores::TEXTO_FRACO, 110.0),
+                familia::linha(
+                    &item.author,
+                    familia::sans(13.0),
+                    paleta().texto_fraco,
+                    110.0,
+                ),
             );
         }
         let bh = 34.0;
@@ -1804,7 +1887,7 @@ impl App {
                 r.left_top() + vec2(0.0, 0.5),
                 r.right_top() + vec2(0.0, 0.5),
             ],
-            Stroke::new(1.0, cores::LINHA),
+            Stroke::new(1.0, paleta().linha),
         );
         let left = familia::pintar_texto(
             &p,
@@ -1812,7 +1895,7 @@ impl App {
             familia::espacado(
                 &self.check_line(),
                 familia::mono(10.5),
-                cores::TEXTO_APAGADO,
+                paleta().texto_apagado,
                 1.8,
             ),
         );
@@ -1821,7 +1904,7 @@ impl App {
             let cancel_g = p.layout_job(familia::espacado(
                 "CANCELAR",
                 familia::mono_negrito(10.5),
-                cores::TEXTO,
+                paleta().texto,
                 1.6,
             ));
             let can_cancel = task.product.is_some();
@@ -1836,9 +1919,9 @@ impl App {
                 .expand(4.0);
                 let resp = ui.allocate_rect(cr, Sense::click());
                 let color = if resp.hovered() {
-                    cores::BRANCO
+                    paleta().branco
                 } else {
-                    cores::TEXTO
+                    paleta().texto
                 };
                 p.galley(cr.min + vec2(4.0, 4.0), cancel_g, color);
                 if resp.clicked() {
@@ -1864,7 +1947,7 @@ impl App {
             let g = p.layout_job(familia::linha(
                 &text,
                 familia::sans(12.0),
-                cores::TEXTO_FRACO,
+                paleta().texto_fraco,
                 (bar.left() - left.right() - 40.0).max(40.0),
             ));
             right = bar.left() - 12.0;
@@ -1875,9 +1958,9 @@ impl App {
             );
         } else if !self.status.is_empty() {
             let color = if self.status_is_error {
-                cores::ERRO
+                paleta().erro
             } else {
-                cores::TEXTO_FRACO
+                paleta().texto_fraco
             };
             let g = p.layout_job(familia::linha(
                 &self.status,
@@ -1943,14 +2026,14 @@ impl App {
             let modal = egui::Modal::new(Id::new("notas"))
                 .frame(
                     Frame::NONE
-                        .fill(cores::SUPERFICIE)
-                        .stroke(Stroke::new(1.0, cores::LINHA_FORTE))
+                        .fill(paleta().superficie)
+                        .stroke(Stroke::new(1.0, paleta().linha_forte))
                         .inner_margin(Margin::same(22)),
                 )
                 .show(ctx, |ui| {
                     ui.set_width(520.0_f32.min(ctx.content_rect().width() - 80.0));
                     ui.label(name_job(&item, 20.0));
-                    familia::rotulo(ui, "Notas da versão", 10.5, cores::TEXTO_APAGADO);
+                    familia::rotulo(ui, "Notas da versão", 10.5, paleta().texto_apagado);
                     ui.add_space(6.0);
                     let mut close = false;
                     egui::ScrollArea::vertical()
@@ -1960,7 +2043,7 @@ impl App {
                             if visible.is_empty() {
                                 ui.label(
                                     egui::RichText::new("Nenhuma versão neste canal.")
-                                        .color(cores::TEXTO_FRACO),
+                                        .color(paleta().texto_fraco),
                                 );
                             }
                             for r in visible {
@@ -1981,7 +2064,7 @@ impl App {
                                 } else {
                                     r.notes.trim()
                                 };
-                                ui.label(egui::RichText::new(notes).color(cores::TEXTO));
+                                ui.label(egui::RichText::new(notes).color(paleta().texto));
                                 ui.add_space(10.0);
                             }
                         });
@@ -2004,10 +2087,10 @@ impl App {
                 .and_then(|m| m.product(&id))
                 .map_or(id.clone(), |p| p.name.clone());
             let modal = egui::Modal::new(Id::new("desinstalar"))
-                .frame(Frame::NONE.fill(cores::SUPERFICIE).stroke(Stroke::new(1.0, cores::LINHA_FORTE)).inner_margin(Margin::same(22)))
+                .frame(Frame::NONE.fill(paleta().superficie).stroke(Stroke::new(1.0, paleta().linha_forte)).inner_margin(Margin::same(22)))
                 .show(ctx, |ui| {
-                    ui.label(egui::RichText::new(format!("Remover {name} deste computador?")).size(16.0).color(cores::BRANCO));
-                    ui.label(egui::RichText::new("Todas as versões instaladas e os atalhos saem. Os seus arquivos de trabalho não são tocados.").color(cores::TEXTO_FRACO));
+                    ui.label(egui::RichText::new(format!("Remover {name} deste computador?")).size(16.0).color(paleta().branco));
+                    ui.label(egui::RichText::new("Todas as versões instaladas e os atalhos saem. Os seus arquivos de trabalho não são tocados.").color(paleta().texto_fraco));
                     ui.add_space(10.0);
                     let mut answer = None;
                     ui.horizontal(|ui| {
@@ -2089,17 +2172,18 @@ fn fits(ui: &Ui, text: &str, width: f32) -> bool {
     ui.painter().layout_job(job).size().x <= width
 }
 
+/// The product's accent, darkened on the light palette so it still reads as text.
 fn accent(item: &Item) -> Color32 {
     let [r, g, b] = item.color;
-    Color32::from_rgb(r, g, b)
+    paleta().legivel(Color32::from_rgb(r, g, b))
 }
 
 fn status_color(s: &Status) -> Color32 {
     match s {
-        Status::Update { .. } => cores::AMARELO,
-        Status::Installed { .. } => cores::TEXTO_FRACO,
-        Status::NotInstalled => cores::TEXTO,
-        Status::NoAccess | Status::NoPackage => cores::TEXTO_APAGADO,
+        Status::Update { .. } => paleta().amarelo,
+        Status::Installed { .. } => paleta().texto_fraco,
+        Status::NotInstalled => paleta().texto,
+        Status::NoAccess | Status::NoPackage => paleta().texto_apagado,
     }
 }
 
@@ -2113,7 +2197,7 @@ fn name_job(item: &Item, size: f32) -> egui::text::LayoutJob {
     };
     let (a, b) = &item.name_parts;
     if !a.is_empty() {
-        job.append(a, 0.0, fmt(cores::BRANCO));
+        job.append(a, 0.0, fmt(paleta().branco));
     }
     if !b.is_empty() {
         let lead = if a.is_empty() || item.name.trim() == "UTSim" {
@@ -2129,7 +2213,7 @@ fn name_job(item: &Item, size: f32) -> egui::text::LayoutJob {
 /// A thin bar: filled to `frac`, or a moving segment when the size is unknown.
 fn progress_bar(ui: &Ui, rect: Rect, frac: Option<f32>) {
     let p = ui.painter();
-    p.rect_filled(rect, 0.0, cores::LINHA);
+    p.rect_filled(rect, 0.0, paleta().linha);
     let fill = match frac {
         Some(f) => Rect::from_min_size(
             rect.min,
@@ -2145,7 +2229,7 @@ fn progress_bar(ui: &Ui, rect: Rect, frac: Option<f32>) {
             )
         }
     };
-    p.rect_filled(fill, 0.0, cores::BRANCO);
+    p.rect_filled(fill, 0.0, paleta().branco);
 }
 
 fn open_folder(dir: &std::path::Path) {
