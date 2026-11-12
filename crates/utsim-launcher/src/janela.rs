@@ -3,6 +3,7 @@
 //! the last check and the progress of a download. Flat and near-black (see
 //! [`utsim_ui_tema::familia`]). Long work (manifest, download, report) runs on other threads.
 
+use crate::texto::{dx, fx, sx, tx, vx};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -65,18 +66,31 @@ pub struct Task {
     pub product: Option<String>,
     pub progress: Mutex<Option<Progress>>,
     pub cancel: AtomicBool,
+    /// Fetching the manifest (the footer says "checking").
+    manifest: bool,
     outcome: Mutex<Option<Outcome>>,
 }
 
 impl Task {
     fn new(label: impl Into<String>, product: Option<String>) -> Arc<Self> {
-        Arc::new(Self {
-            label: label.into(),
+        Arc::new(Self::with(label.into(), product, false))
+    }
+
+    /// The task that fetches the manifest.
+    fn new_manifest() -> Arc<Self> {
+        let label = tx("janela-buscando_a_lista_de_versoes").to_string();
+        Arc::new(Self::with(label, None, true))
+    }
+
+    fn with(label: String, product: Option<String>, manifest: bool) -> Self {
+        Self {
+            label,
             product,
             progress: Mutex::new(None),
             cancel: AtomicBool::new(false),
+            manifest,
             outcome: Mutex::new(None),
-        })
+        }
     }
 
     fn finish(&self, o: Outcome) {
@@ -92,7 +106,7 @@ impl Task {
     }
 
     fn is_manifest(&self) -> bool {
-        self.product.is_none() && self.label.starts_with("Buscando")
+        self.manifest
     }
 }
 
@@ -138,6 +152,7 @@ impl App {
     pub fn new(ctx: &Context, env: Arc<Env>, message: Option<String>, intro: bool) -> Self {
         install::clean_leftovers(&env.layout);
         let state = LauncherState::load(&env.layout.state_file());
+        apply_language(&state);
         let manifest = crate::cached_manifest(&env);
         let mut app = Self::sem_rede(env, state, manifest);
         app.offline = app.manifest.is_some();
@@ -201,7 +216,13 @@ impl App {
 
     fn save_state(&mut self) {
         if let Err(e) = self.state.save(&self.env.layout.state_file()) {
-            self.set_status(format!("não consegui gravar as preferências: {e}"), true);
+            self.set_status(
+                fx(
+                    "janela-nao_consegui_gravar_as_preferencias",
+                    &[("e", vx(&e))],
+                ),
+                true,
+            );
         }
     }
 
@@ -247,7 +268,7 @@ impl App {
         if self.busy() {
             return;
         }
-        let task = Task::new("Buscando a lista de versões...", None);
+        let task = Task::new_manifest();
         self.task = Some(Arc::clone(&task));
         let env = Arc::clone(&self.env);
         let mut state = self.state.clone();
@@ -279,7 +300,13 @@ impl App {
             return;
         }
         let task = Task::new(
-            format!("Instalando {} {}", product.name, release.version),
+            fx(
+                "janela-instalando",
+                &[
+                    ("name", vx(&product.name)),
+                    ("version", vx(&release.version)),
+                ],
+            ),
             Some(product.id.clone()),
         );
         self.task = Some(Arc::clone(&task));
@@ -304,7 +331,15 @@ impl App {
                 &task.cancel,
                 &mut progress,
             )
-            .map(|_| format!("{} {} instalado.", product.name, release.version))
+            .map(|_| {
+                fx(
+                    "janela-instalado",
+                    &[
+                        ("name", vx(&product.name)),
+                        ("version", vx(&release.version)),
+                    ],
+                )
+            })
             .map_err(|e| e.to_string());
             task.finish(Outcome::Installed(r));
             ctx.request_repaint();
@@ -326,7 +361,10 @@ impl App {
         };
         let code = self.code();
         let task = Task::new(
-            format!("Baixando o launcher {}", release.version),
+            fx(
+                "janela-baixando_o_launcher",
+                &[("version", vx(&release.version))],
+            ),
             Some(product.id.clone()),
         );
         self.task = Some(Arc::clone(&task));
@@ -375,7 +413,7 @@ impl App {
     }
 
     fn start_report(&mut self, ctx: &Context) {
-        let task = Task::new("Gerando o relato de erro...", None);
+        let task = Task::new(tx("janela-gerando_o_relato_de_erro"), None);
         self.task = Some(Arc::clone(&task));
         let env = Arc::clone(&self.env);
         let state = self.state.clone();
@@ -383,9 +421,9 @@ impl App {
         std::thread::spawn(move || {
             let r = crate::error_report(&env, &state, &crate::downloads_dir())
                 .map(|p| {
-                    format!(
-                        "Relato salvo em {}. Envie este arquivo ao autor (ele não contém o seu código).",
-                        p.display()
+                    fx(
+                        "janela-relato_salvo_em_envie_este",
+                        &[("p", vx(&p.display()))],
                     )
                 })
                 .map_err(|e| e.to_string());
@@ -420,12 +458,12 @@ impl App {
                     self.editing_code = true;
                 }
                 if !self.status_is_error {
-                    self.set_status("Lista de versões atualizada.", false);
+                    self.set_status(tx("janela-lista_de_versoes_atualizada"), false);
                 }
             }
             Outcome::Manifest(Err(e)) => {
                 let extra = if self.manifest.is_some() {
-                    " Mostrando a última lista baixada."
+                    tx("janela-mostrando_a_ultima_lista_baixada")
                 } else {
                     ""
                 };
@@ -445,7 +483,7 @@ impl App {
                             "instalador do launcher aberto; o launcher fecha para ser trocado",
                         );
                         self.save_state();
-                        self.set_status("Atualizando o launcher; ele reabre sozinho.", false);
+                        self.set_status(tx("janela-atualizando_o_launcher_ele_reabre"), false);
                         // Closing frees the program's file for the installer.
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
@@ -457,10 +495,7 @@ impl App {
             | Outcome::LauncherReady(Err(e)) => {
                 self.queue.clear();
                 if cancelled {
-                    self.set_status(
-                        "Download cancelado; ele continua de onde parou na próxima vez.",
-                        false,
-                    );
+                    self.set_status(tx("janela-download_cancelado_ele_continua_de"), false);
                 } else {
                     self.set_status(e, true);
                 }
@@ -573,17 +608,30 @@ impl App {
         ui.scope_builder(UiBuilder::new().max_rect(col), |ui| {
             ui.spacing_mut().item_spacing.y = 10.0;
             ui.horizontal(|ui| {
-                ui.label(familia::espacado("UTSIM", familia::negrito(22.0), paleta().branco, 4.0));
+                ui.label(familia::espacado(
+                    "UTSIM",
+                    familia::negrito(22.0),
+                    paleta().branco,
+                    4.0,
+                ));
                 ui.add_space(12.0);
-                ui.label(familia::espacado("FAMÍLIA DE APPS", familia::mono(11.0), paleta().texto_fraco, 2.5));
+                ui.label(familia::espacado(
+                    tx("janela-familia_de_apps"),
+                    familia::mono(11.0),
+                    paleta().texto_fraco,
+                    2.5,
+                ));
             });
             ui.add_space(18.0);
-            familia::rotulo(ui, "Código de acesso", 11.0, paleta().texto_apagado);
+            familia::rotulo(
+                ui,
+                tx("janela-codigo_de_acesso"),
+                11.0,
+                paleta().texto_apagado,
+            );
             ui.label(
-                egui::RichText::new(
-                    "Digite o código que você recebeu do autor. Ele tem 20 letras e números, como ABCD-EFGH-JKMN-PQRS-TVWX.",
-                )
-                .color(paleta().texto_fraco),
+                egui::RichText::new(tx("janela-digite_o_codigo_que_voce"))
+                    .color(paleta().texto_fraco),
             );
             let edit = ui.add(
                 egui::TextEdit::singleline(&mut self.code_input)
@@ -601,10 +649,23 @@ impl App {
                 || !self.env.manifest_url(&self.state).trim().is_empty();
             let mut ok = false;
             ui.horizontal(|ui| {
-                ok = familia::botao(ui, "Continuar", Botao::Primario, vec2(180.0, 36.0), true).clicked() || enter;
+                ok = familia::botao(
+                    ui,
+                    tx("janela-continuar"),
+                    Botao::Primario,
+                    vec2(180.0, 36.0),
+                    true,
+                )
+                .clicked()
+                    || enter;
                 if can_skip {
-                    let label = if self.state.code.is_some() { "Cancelar" } else { "Agora não" };
-                    if familia::botao(ui, label, Botao::Contorno, vec2(140.0, 36.0), true).clicked() {
+                    let label = if self.state.code.is_some() {
+                        tx("janela-cancelar")
+                    } else {
+                        tx("janela-agora_nao")
+                    };
+                    if familia::botao(ui, label, Botao::Contorno, vec2(140.0, 36.0), true).clicked()
+                    {
                         self.editing_code = false;
                         self.code_error = None;
                     }
@@ -618,20 +679,28 @@ impl App {
             }
             ui.add_space(12.0);
             let no_builtin = crate::built_in_manifest_url().is_empty();
-            egui::CollapsingHeader::new(familia::espacado("AVANÇADO", familia::mono(11.0), paleta().texto_fraco, 2.0))
-                .default_open(no_builtin)
-                .show(ui, |ui| {
-                    ui.label(egui::RichText::new("Endereço da lista de versões (só se o autor pedir):").color(paleta().texto_fraco));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.url_input)
-                            .hint_text("link do manifesto.json no Google Drive")
-                            .desired_width(w - 20.0)
-                            .margin(Margin::symmetric(10, 7)),
-                    );
-                });
+            egui::CollapsingHeader::new(familia::espacado(
+                tx("janela-avancado"),
+                familia::mono(11.0),
+                paleta().texto_fraco,
+                2.0,
+            ))
+            .default_open(no_builtin)
+            .show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new(tx("janela-endereco_da_lista_de_versoes"))
+                        .color(paleta().texto_fraco),
+                );
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.url_input)
+                        .hint_text(tx("janela-link_do_manifesto_json_no"))
+                        .desired_width(w - 20.0)
+                        .margin(Margin::symmetric(10, 7)),
+                );
+            });
             ui.add_space(12.0);
             ui.label(
-                egui::RichText::new("O código fica guardado só neste computador, na sua pasta de usuário. Aplicativos abertos para todos não pedem código.")
+                egui::RichText::new(tx("janela-o_codigo_fica_guardado_so"))
                     .size(12.0)
                     .color(paleta().texto_apagado),
             );
@@ -643,8 +712,7 @@ impl App {
         let typed = self.code_input.trim().to_string();
         if typed.is_empty() {
             if url.is_empty() && self.env.manifest_url(&self.state).trim().is_empty() {
-                self.code_error =
-                    Some("Digite o código ou, em Avançado, o endereço da lista.".into());
+                self.code_error = Some(tx("janela-digite_o_codigo_ou_em").into());
                 return;
             }
         } else {
@@ -701,7 +769,7 @@ impl App {
             &p,
             pos2(x + 16.0, r.center().y),
             familia::espacado(
-                "FAMÍLIA DE APPS",
+                tx("janela-familia_de_apps"),
                 familia::mono(11.0),
                 paleta().texto_fraco,
                 2.6,
@@ -715,7 +783,7 @@ impl App {
         );
         let resp = ui
             .allocate_rect(gear, Sense::click())
-            .on_hover_text("Configurações");
+            .on_hover_text(tx("janela-configuracoes"));
         if resp.hovered() {
             p.rect_filled(gear.shrink2(vec2(0.5, 0.0)), 0.0, paleta().sobre);
         }
@@ -732,8 +800,8 @@ impl App {
         // Who is testing: a chip that opens the code screen.
         let code = self.code();
         let text = match &code {
-            Some(c) => format!("TESTADOR · {}", c.id().to_uppercase()),
-            None => "SEM CÓDIGO DE TESTADOR".to_string(),
+            Some(c) => fx("janela-testador", &[("codigo", vx(&c.id().to_uppercase()))]),
+            None => tx("janela-sem_codigo_de_testador").to_string(),
         };
         let g = p.layout_job(familia::espacado(
             &text,
@@ -750,9 +818,9 @@ impl App {
             let resp = ui
                 .allocate_rect(chip, if busy { Sense::hover() } else { Sense::click() })
                 .on_hover_text(if code.is_some() {
-                    "Trocar o código de testador"
+                    tx("janela-trocar_o_codigo_de_testador")
                 } else {
-                    "Inserir um código de testador para ver os aplicativos em teste"
+                    tx("janela-inserir_um_codigo_de_testador")
                 });
             let fill = if resp.hovered() && !busy {
                 paleta().sobre
@@ -809,14 +877,21 @@ impl App {
             .show(ctx, |ui| {
                 ui.set_width(480.0_f32.min(ctx.content_rect().width() - 80.0));
                 ui.label(
-                    egui::RichText::new("Configurações")
+                    egui::RichText::new(tx("janela-configuracoes"))
                         .font(familia::negrito(20.0))
                         .color(paleta().branco),
                 );
                 ui.add_space(4.0);
                 self.settings_body(ui);
                 ui.add_space(16.0);
-                familia::botao(ui, "Fechar", Botao::Contorno, vec2(120.0, 32.0), true).clicked()
+                familia::botao(
+                    ui,
+                    tx("janela-fechar"),
+                    Botao::Contorno,
+                    vec2(120.0, 32.0),
+                    true,
+                )
+                .clicked()
             });
         if modal.inner || modal.should_close() {
             self.settings_open = false;
@@ -832,26 +907,26 @@ impl App {
         };
         let weak = |t: String| egui::RichText::new(t).color(paleta().texto_fraco);
 
-        section(ui, "Testador");
+        section(ui, tx("janela-testador-2"));
         let code = self.code();
         ui.label(match &code {
-            Some(c) => format!("Código de {}.", c.id()),
-            None => "Sem código: só os aplicativos abertos para todos.".into(),
+            Some(c) => fx("janela-codigo_de", &[("id", vx(&c.id()))]),
+            None => tx("janela-sem_codigo_so_os_aplicativos").into(),
         });
         let label = if code.is_some() {
-            "Trocar código"
+            tx("janela-trocar_codigo")
         } else {
-            "Inserir código"
+            tx("janela-inserir_codigo")
         };
         if familia::botao(ui, label, Botao::Contorno, vec2(170.0, 30.0), !busy).clicked() {
             self.editing_code = true;
             self.settings_open = false;
         }
 
-        section(ui, "Instalação");
+        section(ui, tx("janela-instalacao"));
         let mut desktop = self.state.desktop_shortcuts;
         if ui
-            .checkbox(&mut desktop, "Criar atalho na área de trabalho ao instalar")
+            .checkbox(&mut desktop, tx("janela-criar_atalho_na_area_de"))
             .changed()
         {
             self.state.desktop_shortcuts = desktop;
@@ -859,17 +934,20 @@ impl App {
         }
         let root = self.env.layout.root.clone();
         ui.horizontal(|ui| {
-            ui.label(weak(format!("Aplicativos em {}", root.display())));
-            if ui.small_button("Abrir pasta").clicked() {
+            ui.label(weak(fx(
+                "janela-aplicativos_em",
+                &[("root", vx(&root.display()))],
+            )));
+            if ui.small_button(tx("janela-abrir_pasta")).clicked() {
                 open_folder(&root);
             }
         });
 
-        section(ui, "Lista de versões");
+        section(ui, tx("janela-lista_de_versoes"));
         ui.label(weak(self.check_line().to_lowercase()));
         if familia::botao(
             ui,
-            "Buscar agora",
+            tx("janela-buscar_agora"),
             Botao::Contorno,
             vec2(170.0, 30.0),
             !busy,
@@ -879,13 +957,13 @@ impl App {
             self.refresh(ui.ctx());
         }
 
-        section(ui, "Aparência");
+        section(ui, tx("janela-aparencia"));
         let mut theme = self.state.theme;
         ui.horizontal(|ui| {
             for (t, name) in [
-                (Theme::Dark, "Escuro"),
-                (Theme::Light, "Claro"),
-                (Theme::System, "Seguir o Windows"),
+                (Theme::Dark, tx("janela-escuro")),
+                (Theme::Light, tx("janela-claro")),
+                (Theme::System, tx("janela-seguir_o_windows")),
             ] {
                 ui.radio_value(&mut theme, t, name);
             }
@@ -895,26 +973,36 @@ impl App {
             self.save_state();
             self.apply_theme(ui.ctx());
         }
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.label(tx("janela-idioma"));
+            let mut i = utsim_idiomas::atual();
+            if utsim_idiomas::seletor(ui, "idioma", &mut i) {
+                utsim_idiomas::definir(i);
+                self.state.language = Some(i.codigo().to_string());
+                self.save_state();
+            }
+        });
 
-        section(ui, "Abertura");
+        section(ui, tx("janela-abertura"));
         let mut intro = !self.state.skip_intro;
         if ui
-            .checkbox(&mut intro, "Mostrar a animação ao abrir o launcher")
+            .checkbox(&mut intro, tx("janela-mostrar_a_animacao_ao_abrir"))
             .changed()
         {
             self.state.skip_intro = !intro;
             self.save_state();
         }
 
-        section(ui, "Ajuda");
+        section(ui, tx("janela-ajuda"));
         if familia::botao(
             ui,
-            "Gerar relato de erro",
+            tx("janela-gerar_relato_de_erro"),
             Botao::Contorno,
             vec2(220.0, 30.0),
             !busy,
         )
-        .on_hover_text("Cria um .zip com os registros do launcher para enviar ao autor")
+        .on_hover_text(tx("janela-cria_um_zip_com_os"))
         .clicked()
         {
             self.start_report(ui.ctx());
@@ -922,9 +1010,12 @@ impl App {
         }
         ui.add_space(10.0);
         ui.label(
-            egui::RichText::new(format!("UTSim Launcher {}", env!("CARGO_PKG_VERSION")))
-                .size(11.5)
-                .color(paleta().texto_apagado),
+            egui::RichText::new(fx(
+                "janela-utsim_launcher",
+                &[("versao", vx(&env!("CARGO_PKG_VERSION")))],
+            ))
+            .size(11.5)
+            .color(paleta().texto_apagado),
         );
     }
 
@@ -940,9 +1031,9 @@ impl App {
                 ui.vertical_centered(|ui| {
                     ui.label(
                         egui::RichText::new(if busy {
-                            "Buscando a lista de aplicativos..."
+                            tx("janela-buscando_a_lista_de_aplicativos")
                         } else {
-                            "Nenhuma lista de aplicativos ainda."
+                            tx("janela-nenhuma_lista_de_aplicativos_ainda")
                         })
                         .size(15.0)
                         .color(paleta().texto_fraco),
@@ -951,7 +1042,7 @@ impl App {
                     if !busy
                         && familia::botao(
                             ui,
-                            "Atualizar lista",
+                            tx("janela-atualizar_lista"),
                             Botao::Contorno,
                             vec2(200.0, 34.0),
                             true,
@@ -963,7 +1054,7 @@ impl App {
                     if self.state.code.is_none()
                         && familia::botao(
                             ui,
-                            "Inserir código",
+                            tx("janela-inserir_codigo"),
                             Botao::Contorno,
                             vec2(200.0, 34.0),
                             true,
@@ -978,11 +1069,11 @@ impl App {
         };
         if items.is_empty() {
             let text = if m.apps().next().is_none() {
-                "A lista não tem aplicativos ainda.".to_string()
+                tx("janela-a_lista_nao_tem_aplicativos").to_string()
             } else {
-                format!(
-                    "Nenhum aplicativo encontrado para \u{201c}{}\u{201d}.",
-                    self.search.trim()
+                fx(
+                    "janela-nenhum_aplicativo_encontrado_para",
+                    &[("search", vx(&self.search.trim()))],
                 )
             };
             ui.scope_builder(UiBuilder::new().max_rect(body), |ui| {
@@ -1023,9 +1114,9 @@ impl App {
             x -= h;
             let r = Rect::from_min_size(pos2(x, y), Vec2::splat(h));
             let tip = if view == ViewMode::Grid {
-                "Grade"
+                tx("janela-grade")
             } else {
-                "Lista"
+                tx("janela-lista")
             };
             if familia::botao_icone_em(ui, r, icon, self.state.view == view, true)
                 .on_hover_text(tip)
@@ -1044,7 +1135,7 @@ impl App {
         ui.scope_builder(UiBuilder::new().max_rect(search), |ui| {
             ui.add(
                 egui::TextEdit::singleline(&mut self.search)
-                    .hint_text("Buscar aplicativos")
+                    .hint_text(tx("janela-buscar_aplicativos"))
                     .desired_width(sw)
                     .min_size(vec2(sw, h))
                     .vertical_align(egui::Align::Center)
@@ -1060,10 +1151,10 @@ impl App {
             ui.spacing_mut().interact_size.y = h;
             egui::ComboBox::from_id_salt("ordem")
                 .width(cw - 12.0)
-                .selected_text(sort.label())
+                .selected_text(sort_label(sort))
                 .show_ui(ui, |ui| {
                     for o in SortOrder::ALL {
-                        ui.selectable_value(&mut sort, o, o.label());
+                        ui.selectable_value(&mut sort, o, sort_label(o));
                     }
                 });
         });
@@ -1075,7 +1166,7 @@ impl App {
         x -= 8.0 + h;
         let refresh = Rect::from_min_size(pos2(x, y), Vec2::splat(h));
         if familia::botao_icone_em(ui, refresh, Icone::Atualizar, false, !busy)
-            .on_hover_text("Buscar a lista de versões de novo")
+            .on_hover_text(tx("janela-buscar_a_lista_de_versoes"))
             .clicked()
         {
             self.refresh(ui.ctx());
@@ -1083,7 +1174,7 @@ impl App {
         // Title and summary on the left, where they fit.
         let p = ui.painter();
         let title = p.layout_no_wrap(
-            "Aplicativos".to_string(),
+            tx("janela-aplicativos").to_string(),
             familia::negrito(22.0),
             paleta().branco,
         );
@@ -1093,17 +1184,13 @@ impl App {
             let installed = items.iter().filter(|i| i.active.is_some()).count();
             let updates = items.iter().filter(|i| i.has_update()).count();
             let mut parts = vec![
-                format!("{} no total", items.len()),
-                format!(
-                    "{installed} instalado{}",
-                    if installed == 1 { "" } else { "s" }
-                ),
+                fx("janela-no_total", &[("n", vx(&items.len()))]),
+                fx("janela-instalados", &[("n", vx(&installed))]),
             ];
             if updates > 0 {
-                parts.push(format!(
-                    "{updates} atualização{} disponível{}",
-                    if updates == 1 { "" } else { "ões" },
-                    if updates == 1 { "" } else { "is" }
+                parts.push(fx(
+                    "janela-atualizacoes_disponiveis",
+                    &[("n", vx(&updates))],
                 ));
             }
             p.galley(
@@ -1142,10 +1229,12 @@ impl App {
             vec2(bw, 34.0),
         );
         let x = r.left() + 18.0;
-        let text = format!(
-            "Nova versão do launcher {}  (você usa a {})",
-            release.version,
-            crate::VERSAO
+        let text = fx(
+            "janela-nova_versao_do_launcher_voce",
+            &[
+                ("version", vx(&release.version)),
+                ("atual", vx(&crate::VERSAO)),
+            ],
         );
         p.galley(
             pos2(x, r.center().y - 9.0),
@@ -1166,8 +1255,14 @@ impl App {
             let bar = Rect::from_min_size(pos2(button.left(), r.center().y - 2.0), vec2(bw, 4.0));
             progress_bar(ui, bar, frac);
             ui.ctx().request_repaint();
-        } else if familia::botao_em(ui, button, "Atualizar", Botao::Primario, !self.busy())
-            .clicked()
+        } else if familia::botao_em(
+            ui,
+            button,
+            tx("janela-atualizar"),
+            Botao::Primario,
+            !self.busy(),
+        )
+        .clicked()
         {
             self.start_launcher_update(ui.ctx());
         }
@@ -1190,10 +1285,9 @@ impl App {
             StrokeKind::Inside,
         );
         let n = ups.len();
-        let head = format!(
-            "{n} ATUALIZAÇ{} DISPONÍVE{}",
-            if n == 1 { "ÃO" } else { "ÕES" },
-            if n == 1 { "L" } else { "IS" }
+        let head = fx(
+            "janela-atualizacoes_disponiveis_maiusculas",
+            &[("n", vx(&n))],
         );
         let bw = 190.0;
         let button = Rect::from_min_size(
@@ -1230,9 +1324,9 @@ impl App {
             Color32::WHITE,
         );
         let label = if n == 1 {
-            "Atualizar".to_string()
+            tx("janela-atualizar").to_string()
         } else {
-            format!("Atualizar todos ({n})")
+            fx("janela-atualizar_todos", &[("n", vx(&n))])
         };
         let busy = self.busy();
         if familia::botao_em(ui, button, &label, Botao::Primario, !busy).clicked() {
@@ -1246,8 +1340,8 @@ impl App {
         let (mine, others): (Vec<&Item>, Vec<&Item>) =
             items.iter().partition(|i| i.active.is_some());
         for (title, group) in [
-            ("Neste computador", mine),
-            ("Disponíveis para instalar", others),
+            (tx("janela-neste_computador"), mine),
+            (tx("janela-disponiveis_para_instalar"), others),
         ] {
             if group.is_empty() {
                 continue;
@@ -1343,12 +1437,12 @@ impl App {
         let inner_w = cell.width() - 2.0 * PAD;
         let icon = Rect::from_min_size(pos2(left, cell.top() + PAD + 2.0), Vec2::splat(56.0));
         self.icon(ui, icon, item, icon_alpha);
-        let tx = icon.right() + 14.0;
-        let name_w = cell.right() - PAD - tx;
+        let text_x = icon.right() + 14.0;
+        let name_w = cell.right() - PAD - text_x;
         let g = p.layout_job(name_job(item, 21.0));
-        let name_rect = Rect::from_min_size(pos2(tx, icon.top() + 4.0), g.size());
+        let name_rect = Rect::from_min_size(pos2(text_x, icon.top() + 4.0), g.size());
         p.galley(name_rect.min, g, Color32::WHITE);
-        let tag = format!("POR {}", item.author.to_uppercase());
+        let tag = fx("janela-por", &[("autor", vx(&item.author.to_uppercase()))]);
         let tg = p.layout_job(familia::espacado(
             &tag,
             familia::mono(9.5),
@@ -1365,7 +1459,7 @@ impl App {
             );
         }
         p.galley(
-            pos2(tx, name_rect.bottom() + 3.0),
+            pos2(text_x, name_rect.bottom() + 3.0),
             p.layout_job(familia::linha(
                 &item.subtitle,
                 familia::sans(13.5),
@@ -1388,7 +1482,7 @@ impl App {
             familia::pintar_etiqueta(
                 &p,
                 pos2(b.right() + 8.0, by),
-                "Aberto para todos",
+                tx("janela-aberto_para_todos"),
                 paleta().verde,
                 10.5,
             );
@@ -1418,7 +1512,7 @@ impl App {
         let newest = item.latest.as_ref().map(|r| r.version.clone());
         let columns = [
             (
-                "Instalada",
+                tx("janela-instalada"),
                 item.active.clone().unwrap_or_else(|| "—".into()),
                 if item.active.is_some() {
                     paleta().texto
@@ -1427,7 +1521,7 @@ impl App {
                 },
             ),
             (
-                "Mais nova",
+                tx("janela-mais_nova"),
                 newest.unwrap_or_else(|| "—".into()),
                 if item.has_update() {
                     paleta().amarelo
@@ -1436,7 +1530,7 @@ impl App {
                 },
             ),
             (
-                "Publicada",
+                tx("janela-publicada"),
                 item.release_date().unwrap_or_else(|| "—".into()),
                 paleta().texto_fraco,
             ),
@@ -1468,7 +1562,7 @@ impl App {
         }
         if item.latest.is_some() {
             let g = p.layout_job(familia::espacado(
-                "NOTAS ↗",
+                tx("janela-notas"),
                 familia::mono(10.5),
                 paleta().texto_fraco,
                 1.6,
@@ -1480,7 +1574,7 @@ impl App {
             .expand(4.0);
             let resp = ui
                 .allocate_rect(r, Sense::click())
-                .on_hover_text("Notas da versão");
+                .on_hover_text(tx("janela-notas_da_versao"));
             let color = if resp.hovered() {
                 paleta().branco
             } else {
@@ -1509,8 +1603,11 @@ impl App {
             let task = self.task.clone();
             let frac = task.as_ref().and_then(|t| t.fraction());
             let label = match frac {
-                Some(f) => format!("Cancelar · {:.0}%", f * 100.0),
-                None => "Cancelar".into(),
+                Some(f) => fx(
+                    "janela-cancelar-2",
+                    &[("pct", dx(format!("{:.0}", f * 100.0)))],
+                ),
+                None => tx("janela-cancelar").into(),
             };
             if familia::botao_em(ui, main, &label, Botao::Contorno, true).clicked() {
                 if let Some(t) = &task {
@@ -1528,19 +1625,29 @@ impl App {
             );
         } else {
             let (label, kind, enabled) = match &item.status {
-                Status::Update { to, .. } => {
-                    (format!("Atualizar para {to}"), Botao::Primario, !busy)
-                }
-                Status::Installed { .. } => ("Abrir".to_string(), Botao::Contorno, true),
-                Status::NotInstalled => ("Instalar".to_string(), Botao::Primario, !busy),
-                Status::NoAccess => ("Inserir código".to_string(), Botao::Contorno, !busy),
-                Status::NoPackage => ("Indisponível".to_string(), Botao::Contorno, false),
+                Status::Update { to, .. } => (
+                    fx("janela-atualizar_para", &[("to", vx(&to))]),
+                    Botao::Primario,
+                    !busy,
+                ),
+                Status::Installed { .. } => (tx("janela-abrir").to_string(), Botao::Contorno, true),
+                Status::NotInstalled => (tx("janela-instalar").to_string(), Botao::Primario, !busy),
+                Status::NoAccess => (
+                    tx("janela-inserir_codigo").to_string(),
+                    Botao::Contorno,
+                    !busy,
+                ),
+                Status::NoPackage => (
+                    tx("janela-indisponivel").to_string(),
+                    Botao::Contorno,
+                    false,
+                ),
             };
             // A long version does not fit a narrow button: "Atualizar" alone then.
             let label = if fits(ui, &label, main.width() - 16.0) {
                 label
             } else if matches!(item.status, Status::Update { .. }) {
-                "Atualizar".to_string()
+                tx("janela-atualizar").to_string()
             } else {
                 label
             };
@@ -1561,7 +1668,7 @@ impl App {
             }
         }
         let resp = familia::botao_icone_em(ui, more, Icone::Reticencias, false, true)
-            .on_hover_text("Mais opções");
+            .on_hover_text(tx("janela-mais_opcoes"));
         egui::Popup::menu(&resp)
             .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
             .show(|ui| self.product_menu(ui, item));
@@ -1569,7 +1676,7 @@ impl App {
 
     fn launch(&mut self, id: &str, name: &str) {
         match install::launch(&self.env.layout, id) {
-            Ok(_) => self.set_status(format!("{name} aberto."), false),
+            Ok(_) => self.set_status(fx("janela-aberto", &[("name", vx(&name))]), false),
             Err(e) => self.set_status(e.to_string(), true),
         }
     }
@@ -1607,16 +1714,20 @@ impl App {
         else {
             return;
         };
-        if ui.button("Notas da versão").clicked() {
+        if ui.button(tx("janela-notas_da_versao")).clicked() {
             self.notes = Some(item.id.clone());
             ui.close();
         }
-        if item.active.is_some() && ui.button("Abrir a pasta do aplicativo").clicked() {
+        if item.active.is_some()
+            && ui
+                .button(tx("janela-abrir_a_pasta_do_aplicativo"))
+                .clicked()
+        {
             open_folder(&layout.product(&item.id));
             ui.close();
         }
         ui.separator();
-        familia::rotulo(ui, "Canal", 10.5, paleta().texto_apagado);
+        familia::rotulo(ui, tx("janela-canal"), 10.5, paleta().texto_apagado);
         let mut channels = product.channels();
         for c in [manifest::STABLE, manifest::TESTING] {
             if !channels.iter().any(|x| x == c) {
@@ -1641,12 +1752,17 @@ impl App {
                 && ui
                     .add_enabled(
                         !busy,
-                        egui::Button::new(format!("Remover versões antigas ({olds})")),
+                        egui::Button::new(fx(
+                            "janela-remover_versoes_antigas",
+                            &[("olds", vx(&olds))],
+                        )),
                     )
                     .clicked()
             {
                 match install::remove_old(&layout, &item.id, 0) {
-                    Ok(v) => self.set_status(format!("Removidas: {}.", v.join(", ")), false),
+                    Ok(v) => {
+                        self.set_status(fx("janela-removidas", &[("v", vx(&v.join(", ")))]), false)
+                    }
                     Err(e) => self.set_status(e.to_string(), true),
                 }
                 ui.close();
@@ -1654,7 +1770,9 @@ impl App {
             if ui
                 .add_enabled(
                     !busy,
-                    egui::Button::new(egui::RichText::new("Desinstalar...").color(paleta().erro)),
+                    egui::Button::new(
+                        egui::RichText::new(tx("janela-desinstalar")).color(paleta().erro),
+                    ),
                 )
                 .clicked()
             {
@@ -1663,7 +1781,7 @@ impl App {
             }
         }
         ui.separator();
-        familia::rotulo(ui, "Versões", 10.5, paleta().texto_apagado);
+        familia::rotulo(ui, tx("janela-versoes"), 10.5, paleta().texto_apagado);
         let releases = product.visible(&channel);
         let ctx = MenuVersions {
             item,
@@ -1677,7 +1795,7 @@ impl App {
         }
         let more = releases.len().saturating_sub(MENU_VERSIONS);
         if more > 0 {
-            ui.menu_button(format!("Mais versões ({more})"), |ui| {
+            ui.menu_button(fx("janela-mais_versoes", &[("more", vx(&more))]), |ui| {
                 ui.set_min_width(260.0);
                 egui::ScrollArea::vertical()
                     .max_height(MENU_MORE_H)
@@ -1706,34 +1824,52 @@ impl App {
         if is_active {
             ui.add_enabled(
                 false,
-                egui::Button::new(format!("{}{tag} (ativa)", r.version)),
+                egui::Button::new(fx(
+                    "janela-versao_ativa",
+                    &[("versao", sx(format!("{}{tag}", r.version)))],
+                )),
             );
         } else if is_installed {
             if ui
                 .add_enabled(
                     !m.busy,
-                    egui::Button::new(format!("Usar a {}{tag}", r.version)),
+                    egui::Button::new(fx(
+                        "janela-usar_a_versao",
+                        &[("versao", sx(format!("{}{tag}", r.version)))],
+                    )),
                 )
                 .clicked()
             {
                 match install::activate(&layout, &item.id, &r.version) {
-                    Ok(()) => self.set_status(format!("{} {} ativa.", item.name, r.version), false),
+                    Ok(()) => self.set_status(
+                        fx(
+                            "janela-ativa",
+                            &[("name", vx(&item.name)), ("version", vx(&r.version))],
+                        ),
+                        false,
+                    ),
                     Err(e) => self.set_status(e.to_string(), true),
                 }
                 ui.close();
             }
         } else {
             let why = if pkg.is_none() {
-                " (sem pacote para este sistema)"
+                tx("janela-sem_pacote_para_este_sistema")
             } else if !can {
-                " (sem acesso)"
+                tx("janela-sem_acesso")
             } else {
                 ""
             };
             if ui
                 .add_enabled(
                     !m.busy && can,
-                    egui::Button::new(format!("Instalar a {}{tag}{why}", r.version)),
+                    egui::Button::new(fx(
+                        "janela-instalar_a_versao",
+                        &[
+                            ("versao", sx(format!("{}{tag}", r.version))),
+                            ("motivo", sx(why.to_string())),
+                        ],
+                    )),
                 )
                 .clicked()
             {
@@ -1768,16 +1904,16 @@ impl App {
                 familia::espacado(t, familia::mono(10.5), paleta().texto_apagado, 2.2),
             );
         };
-        label(cols.app, "APLICATIVO");
+        label(cols.app, tx("janela-aplicativo"));
         if let Some(x) = cols.status {
-            label(x, "STATUS");
+            label(x, tx("janela-status"));
         }
-        label(cols.version, "VERSÃO");
+        label(cols.version, tx("janela-versao"));
         if let Some(x) = cols.date {
-            label(x, "LANÇAMENTO");
+            label(x, tx("janela-lancamento"));
         }
         if let Some(x) = cols.author {
-            label(x, "AUTOR");
+            label(x, tx("janela-autor"));
         }
         p.line_segment(
             [
@@ -1902,7 +2038,7 @@ impl App {
         let mut right = r.right() - PAD;
         if let Some(task) = self.task.clone() {
             let cancel_g = p.layout_job(familia::espacado(
-                "CANCELAR",
+                tx("janela-cancelar-3"),
                 familia::mono_negrito(10.5),
                 paleta().texto,
                 1.6,
@@ -1936,11 +2072,13 @@ impl App {
             progress_bar(ui, bar, frac);
             ui.ctx().request_repaint();
             let text = match (frac, task.progress.lock().ok().and_then(|p| *p)) {
-                (Some(_), Some(pr)) => format!(
-                    "{} · {} de {}",
-                    task.label,
-                    bytes(pr.done),
-                    pr.total.map_or("?".into(), bytes)
+                (Some(_), Some(pr)) => fx(
+                    "janela-progresso",
+                    &[
+                        ("tarefa", sx(task.label.clone())),
+                        ("feito", sx(bytes(pr.done))),
+                        ("total", sx(pr.total.map_or("?".into(), bytes))),
+                    ],
                 ),
                 _ => format!("{}...", task.label.trim_end_matches("...")),
             };
@@ -1982,26 +2120,26 @@ impl App {
     pub fn check_line(&self) -> String {
         let url = self.env.manifest_url(&self.state).trim().to_string();
         let via = if url.is_empty() {
-            "SEM ENDEREÇO DA LISTA"
+            tx("janela-sem_endereco_da_lista")
         } else if url.starts_with("file:") {
-            "VIA PASTA LOCAL"
+            tx("janela-via_pasta_local")
         } else if url.contains("google.com") {
-            "VIA DRIVE"
+            tx("janela-via_drive")
         } else {
-            "VIA REDE"
+            tx("janela-via_rede")
         };
         let when = if self.task.as_ref().is_some_and(|t| t.is_manifest()) {
-            "VERIFICANDO...".to_string()
+            tx("janela-verificando").to_string()
         } else if self.offline {
-            "LISTA GUARDADA · SEM CONEXÃO".to_string()
+            tx("janela-lista_guardada_sem_conexao").to_string()
         } else if self.state.checked_at == 0 {
-            "NUNCA VERIFICADO".to_string()
+            tx("janela-nunca_verificado").to_string()
         } else {
             let min = state::now_secs().saturating_sub(self.state.checked_at) / 60;
             match min {
-                0 => "VERIFICADO AGORA".to_string(),
-                m if m < 120 => format!("VERIFICADO HÁ {m} MIN"),
-                m => format!("VERIFICADO HÁ {} H", m / 60),
+                0 => tx("janela-verificado_agora").to_string(),
+                m if m < 120 => fx("janela-verificado_ha_min", &[("m", vx(&m))]),
+                m => fx("janela-verificado_ha_h", &[("h", vx(&(m / 60)))]),
             }
         };
         format!("{when} · {via}")
@@ -2033,7 +2171,12 @@ impl App {
                 .show(ctx, |ui| {
                     ui.set_width(520.0_f32.min(ctx.content_rect().width() - 80.0));
                     ui.label(name_job(&item, 20.0));
-                    familia::rotulo(ui, "Notas da versão", 10.5, paleta().texto_apagado);
+                    familia::rotulo(
+                        ui,
+                        tx("janela-notas_da_versao"),
+                        10.5,
+                        paleta().texto_apagado,
+                    );
                     ui.add_space(6.0);
                     let mut close = false;
                     egui::ScrollArea::vertical()
@@ -2042,12 +2185,12 @@ impl App {
                             let visible = product.visible(&item.channel);
                             if visible.is_empty() {
                                 ui.label(
-                                    egui::RichText::new("Nenhuma versão neste canal.")
+                                    egui::RichText::new(tx("janela-nenhuma_versao_neste_canal"))
                                         .color(paleta().texto_fraco),
                                 );
                             }
                             for r in visible {
-                                let date = catalogo::date_pt(&r.published_at).unwrap_or_default();
+                                let date = catalogo::date_text(&r.published_at).unwrap_or_default();
                                 ui.label(familia::espacado(
                                     &format!(
                                         "{}  {}  {}",
@@ -2060,7 +2203,7 @@ impl App {
                                     1.2,
                                 ));
                                 let notes = if r.notes.trim().is_empty() {
-                                    "Sem notas."
+                                    tx("janela-sem_notas")
                                 } else {
                                     r.notes.trim()
                                 };
@@ -2069,8 +2212,14 @@ impl App {
                             }
                         });
                     ui.add_space(8.0);
-                    if familia::botao(ui, "Fechar", Botao::Contorno, vec2(120.0, 32.0), true)
-                        .clicked()
+                    if familia::botao(
+                        ui,
+                        tx("janela-fechar"),
+                        Botao::Contorno,
+                        vec2(120.0, 32.0),
+                        true,
+                    )
+                    .clicked()
                     {
                         close = true;
                     }
@@ -2087,17 +2236,48 @@ impl App {
                 .and_then(|m| m.product(&id))
                 .map_or(id.clone(), |p| p.name.clone());
             let modal = egui::Modal::new(Id::new("desinstalar"))
-                .frame(Frame::NONE.fill(paleta().superficie).stroke(Stroke::new(1.0, paleta().linha_forte)).inner_margin(Margin::same(22)))
+                .frame(
+                    Frame::NONE
+                        .fill(paleta().superficie)
+                        .stroke(Stroke::new(1.0, paleta().linha_forte))
+                        .inner_margin(Margin::same(22)),
+                )
                 .show(ctx, |ui| {
-                    ui.label(egui::RichText::new(format!("Remover {name} deste computador?")).size(16.0).color(paleta().branco));
-                    ui.label(egui::RichText::new("Todas as versões instaladas e os atalhos saem. Os seus arquivos de trabalho não são tocados.").color(paleta().texto_fraco));
+                    ui.label(
+                        egui::RichText::new(fx(
+                            "janela-remover_deste_computador",
+                            &[("name", vx(&name))],
+                        ))
+                        .size(16.0)
+                        .color(paleta().branco),
+                    );
+                    ui.label(
+                        egui::RichText::new(tx("janela-todas_as_versoes_instaladas_e"))
+                            .color(paleta().texto_fraco),
+                    );
                     ui.add_space(10.0);
                     let mut answer = None;
                     ui.horizontal(|ui| {
-                        if familia::botao(ui, "Desinstalar", Botao::Perigo, vec2(150.0, 32.0), true).clicked() {
+                        if familia::botao(
+                            ui,
+                            tx("janela-desinstalar-2"),
+                            Botao::Perigo,
+                            vec2(150.0, 32.0),
+                            true,
+                        )
+                        .clicked()
+                        {
                             answer = Some(true);
                         }
-                        if familia::botao(ui, "Cancelar", Botao::Contorno, vec2(120.0, 32.0), true).clicked() {
+                        if familia::botao(
+                            ui,
+                            tx("janela-cancelar"),
+                            Botao::Contorno,
+                            vec2(120.0, 32.0),
+                            true,
+                        )
+                        .clicked()
+                        {
                             answer = Some(false);
                         }
                     });
@@ -2107,7 +2287,8 @@ impl App {
                 Some(true) => {
                     self.confirm_uninstall = None;
                     match crate::uninstall_product(&self.env, &id, &name) {
-                        Ok(()) => self.set_status(format!("{name} desinstalado."), false),
+                        Ok(()) => self
+                            .set_status(fx("janela-desinstalado", &[("name", vx(&name))]), false),
                         Err(e) => self.set_status(e.to_string(), true),
                     }
                 }
@@ -2243,10 +2424,31 @@ fn open_folder(dir: &std::path::Path) {
     let _ = std::process::Command::new(program).arg(dir).spawn();
 }
 
+/// Puts the window in the saved language; with none, the current one stays (the system's,
+/// set by `main`).
+pub fn apply_language(state: &LauncherState) {
+    if let Some(i) = state
+        .language
+        .as_deref()
+        .and_then(utsim_idiomas::Idioma::de_codigo)
+    {
+        utsim_idiomas::definir(i);
+    }
+}
+
+/// The name of an order in the menu.
+fn sort_label(s: SortOrder) -> &'static str {
+    match s {
+        SortOrder::Name => tx("janela-ordem_nome"),
+        SortOrder::Recent => tx("janela-ordem_recentes"),
+        SortOrder::Updates => tx("janela-ordem_atualizacao"),
+    }
+}
+
 fn channel_name(c: &str) -> String {
     match c {
-        manifest::STABLE => "estável".into(),
-        manifest::TESTING => "testes".into(),
+        manifest::STABLE => tx("janela-canal_estavel").into(),
+        manifest::TESTING => tx("janela-canal_testes").into(),
         other => other.into(),
     }
 }
@@ -2254,7 +2456,7 @@ fn channel_name(c: &str) -> String {
 fn bytes(n: u64) -> String {
     const MB: f64 = 1024.0 * 1024.0;
     if n as f64 >= MB {
-        format!("{:.1} MB", n as f64 / MB)
+        utsim_idiomas::marca_decimal(&format!("{:.1} MB", n as f64 / MB))
     } else {
         format!("{:.0} kB", n as f64 / 1024.0)
     }

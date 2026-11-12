@@ -14,6 +14,7 @@ use utsim_launcher::Env;
 use utsim_launcher::catalogo::ICON_LAUNCHER;
 use utsim_launcher::janela::App;
 use utsim_launcher_core::install;
+use utsim_launcher_core::state::LauncherState;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -24,6 +25,8 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    utsim_idiomas::definir(utsim_idiomas::Idioma::inicial());
+    utsim_launcher::janela::apply_language(&LauncherState::load(&env.layout.state_file()));
     let mut first_message = None;
     let mut intro = true;
     match args.first().map(String::as_str) {
@@ -36,7 +39,10 @@ fn main() -> ExitCode {
                 Ok(_) => return ExitCode::SUCCESS,
                 Err(e) => {
                     env.log.line(&format!("--abrir {id}: {e}"));
-                    first_message = Some(format!("Não consegui abrir {id}: {e}"));
+                    first_message = Some(utsim_launcher::texto::fx(
+                        "main-nao_consegui_abrir",
+                        &[("id", id.as_str().into()), ("e", e.to_string().into())],
+                    ));
                     intro = false;
                 }
             }

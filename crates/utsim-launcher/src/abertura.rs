@@ -6,6 +6,7 @@
 //! The timeline is a pure function of time, [`intro_frame`], so it is tested without a
 //! window; [`pintar`] only draws a frame of it.
 
+use crate::texto::tx;
 use std::f32::consts::TAU;
 
 use eframe::egui::{self, Color32, Mesh, Painter, Pos2, Rect, Shape, Stroke, Vec2, pos2, vec2};
@@ -357,7 +358,7 @@ pub fn pintar(p: &Painter, screen: Rect, s: &IntroState, voos: &[Voo]) {
     // Family line.
     if s.tagline_alpha > 0.0 {
         let job = familia::espacado(
-            "FAMÍLIA DE APPS",
+            tx("abertura-familia_de_apps"),
             familia::mono((size * 0.3).clamp(11.0, 15.0)),
             cores::TEXTO_FRACO.gamma_multiply(s.tagline_alpha),
             4.0,

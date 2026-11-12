@@ -3,6 +3,7 @@
 //! update available, no access...). No window here: the cards and rows in [`crate::janela`]
 //! only read these.
 
+use crate::texto::{fx, sx, tx, vx};
 use utsim_launcher_core::code::AccessCode;
 use utsim_launcher_core::install::{self, Layout};
 use utsim_launcher_core::manifest::{self, Manifest, Product, Release};
@@ -13,6 +14,7 @@ use utsim_launcher_core::state::{LauncherState, SortOrder};
 pub struct Builtin {
     pub id: &'static str,
     pub color: [u8; 3],
+    /// Key of the subtitle in `lancador.ftl`.
     pub subtitle: &'static str,
     pub icon: Option<&'static [u8]>,
 }
@@ -35,43 +37,43 @@ pub const BUILTIN: &[Builtin] = &[
     Builtin {
         id: "utsim",
         color: [0x22, 0xB5, 0xFF],
-        subtitle: "Simulação de processos",
+        subtitle: "catalogo-simulacao_de_processos",
         icon: Some(ICON_UTSIM),
     },
     Builtin {
         id: "utsim-3d",
         color: [0x22, 0xB5, 0xFF],
-        subtitle: "Prévia 3D do modelo",
+        subtitle: "catalogo-previa_3d_do_modelo",
         icon: Some(ICON_UTSIM),
     },
     Builtin {
         id: "lean-seis-sigma",
         color: [0x4F, 0xD0, 0x6A],
-        subtitle: "Projetos Lean Seis Sigma",
+        subtitle: "catalogo-projetos_lean_seis_sigma",
         icon: Some(ICON_SEIS_SIGMA),
     },
     Builtin {
         id: "ensino",
         color: [0x8A, 0x5C, 0xE6],
-        subtitle: "Ensino pela simulação",
+        subtitle: "catalogo-ensino_pela_simulacao",
         icon: Some(ICON_ENSINO),
     },
     Builtin {
         id: "qualidade",
         color: [0x3A, 0x6E, 0xE0],
-        subtitle: "Engenharia da qualidade",
+        subtitle: "catalogo-engenharia_da_qualidade",
         icon: Some(ICON_QUALIDADE),
     },
     Builtin {
         id: "seguranca",
         color: [0xF2, 0x8C, 0x1E],
-        subtitle: "Segurança do trabalho",
+        subtitle: "catalogo-seguranca_do_trabalho",
         icon: Some(ICON_SEGURANCA),
     },
     Builtin {
         id: "estatistica",
         color: [0x1F, 0xB5, 0xA3],
-        subtitle: "Análise estatística",
+        subtitle: "catalogo-analise_estatistica",
         icon: Some(ICON_ESTATISTICA),
     },
 ];
@@ -104,11 +106,11 @@ impl Status {
     /// Badge text.
     pub fn label(&self) -> &'static str {
         match self {
-            Status::Update { .. } => "Atualização disponível",
-            Status::Installed { .. } => "Instalado",
-            Status::NotInstalled => "Não instalado",
-            Status::NoAccess => "Sem acesso",
-            Status::NoPackage => "Sem versão para este sistema",
+            Status::Update { .. } => tx("catalogo-atualizacao_disponivel"),
+            Status::Installed { .. } => tx("catalogo-instalado"),
+            Status::NotInstalled => tx("catalogo-nao_instalado"),
+            Status::NoAccess => tx("catalogo-sem_acesso"),
+            Status::NoPackage => tx("catalogo-sem_versao_para_este_sistema"),
         }
     }
 }
@@ -148,7 +150,9 @@ impl Item {
 
     /// Date of the newest version, as `2 de nov. de 2026`.
     pub fn release_date(&self) -> Option<String> {
-        self.latest.as_ref().and_then(|r| date_pt(&r.published_at))
+        self.latest
+            .as_ref()
+            .and_then(|r| date_text(&r.published_at))
     }
 
     pub fn has_update(&self) -> bool {
@@ -178,11 +182,21 @@ pub fn name_parts(name: &str) -> (String, String) {
     }
 }
 
-/// `2026-11-02T12:00:00Z` as `2 de nov. de 2026`.
-pub fn date_pt(rfc3339: &str) -> Option<String> {
+/// `2026-11-02T12:00:00Z` as `2 de nov. de 2026` (in the language of the moment).
+pub fn date_text(rfc3339: &str) -> Option<String> {
     const MONTHS: [&str; 12] = [
-        "jan.", "fev.", "mar.", "abr.", "mai.", "jun.", "jul.", "ago.", "set.", "out.", "nov.",
-        "dez.",
+        "catalogo-mes_1",
+        "catalogo-mes_2",
+        "catalogo-mes_3",
+        "catalogo-mes_4",
+        "catalogo-mes_5",
+        "catalogo-mes_6",
+        "catalogo-mes_7",
+        "catalogo-mes_8",
+        "catalogo-mes_9",
+        "catalogo-mes_10",
+        "catalogo-mes_11",
+        "catalogo-mes_12",
     ];
     let date = rfc3339.get(..10)?;
     let mut it = date.split('-');
@@ -190,7 +204,14 @@ pub fn date_pt(rfc3339: &str) -> Option<String> {
     let m: usize = it.next()?.parse().ok()?;
     let d: u32 = it.next()?.parse().ok()?;
     let month = MONTHS.get(m.checked_sub(1)?)?;
-    Some(format!("{d} de {month} de {y}"))
+    Some(fx(
+        "catalogo-data",
+        &[
+            ("dia", vx(&d)),
+            ("mes", tx(month).into()),
+            ("ano", sx(y.to_string())),
+        ],
+    ))
 }
 
 /// The item of one product.
@@ -234,7 +255,7 @@ pub fn item(
             .map(String::from)
     };
     let subtitle = text(&product.subtitle)
-        .or(builtin.map(|b| b.subtitle.to_string()))
+        .or(builtin.map(|b| tx(b.subtitle).to_string()))
         .unwrap_or_default();
     let open = latest
         .as_ref()
@@ -320,11 +341,11 @@ mod tests {
             (String::new(), "Ferramenta".into())
         );
         assert_eq!(
-            date_pt("2026-11-02T12:00:00Z").as_deref(),
+            date_text("2026-11-02T12:00:00Z").as_deref(),
             Some("2 de nov. de 2026")
         );
-        assert_eq!(date_pt("2026-13-02"), None);
-        assert_eq!(date_pt(""), None);
+        assert_eq!(date_text("2026-13-02"), None);
+        assert_eq!(date_text(""), None);
         assert!(builtin("lean-seis-sigma").is_some());
         assert!(builtin("qualidade").is_some());
         assert!(builtin("seguranca").is_some());

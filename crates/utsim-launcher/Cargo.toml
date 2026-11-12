@@ -23,6 +23,8 @@ utsim-launcher-core = { path = "../utsim-launcher-core" }
 eframe = { version = "=0.36.2", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
 # The flat look shared with the admin app (system fonts, PNG icons).
 utsim-ui-tema = { path = "../utsim-ui-tema", features = ["familia"] }
+# The texts in five languages (idiomas/*/lancador.ftl) and the language picker.
+utsim-idiomas.workspace = true
 
 [dev-dependencies]
 tempfile = "3"

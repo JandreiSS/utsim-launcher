@@ -6,6 +6,7 @@
 pub mod abertura;
 pub mod catalogo;
 pub mod janela;
+pub mod texto;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -21,6 +22,8 @@ use utsim_launcher_core::shortcuts::{self, Shortcut};
 use utsim_launcher_core::state::LauncherState;
 use utsim_launcher_core::transport::{self, Transport};
 use utsim_launcher_core::{Error, Result, VerifyingKey, drive, signature};
+
+use crate::texto::{fx, sx, tx, vx};
 
 mod trust {
     include!(concat!(env!("OUT_DIR"), "/confianca.rs"));
@@ -60,7 +63,7 @@ impl Env {
     /// The launcher as installed on this machine.
     pub fn standard() -> Result<Self> {
         let root = Layout::default_root()
-            .ok_or_else(|| Error::Install("não encontrei a pasta do usuário".into()))?;
+            .ok_or_else(|| Error::Install(tx("lib-pasta_do_usuario").into()))?;
         let layout = Layout::new(root);
         let log = Log::new(&layout.logs(), "launcher.log");
         Ok(Self {
@@ -88,9 +91,7 @@ impl Env {
 pub fn fetch_manifest(env: &Env, state: &mut LauncherState) -> Result<Manifest> {
     let url = env.manifest_url(state).trim().to_string();
     if url.is_empty() {
-        return Err(Error::Install(
-            "este launcher não sabe onde está a lista de versões (build sem manifesto_url)".into(),
-        ));
+        return Err(Error::Install(tx("lib-sem_endereco_da_lista").into()));
     }
     let url = drive::direct_url(&url);
     let resp = env.transport.get(&url, None)?;
@@ -99,9 +100,9 @@ pub fn fetch_manifest(env: &Env, state: &mut LauncherState) -> Result<Manifest> 
         return Err(Error::Drive(drive::interpret(&page, &url).message().into()));
     }
     if resp.status != 200 {
-        return Err(Error::Network(format!(
-            "a lista de versões respondeu HTTP {}",
-            resp.status
+        return Err(Error::Network(fx(
+            "lib-lista_respondeu_http",
+            &[("status", sx(resp.status.to_string()))],
         )));
     }
     let text = resp.text(MANIFEST_LIMIT)?;
@@ -155,17 +156,19 @@ fn download_release<'a>(
     progress: &mut dyn FnMut(Progress),
 ) -> Result<(&'a Package, PathBuf)> {
     let pkg = release.package(&env.platform).ok_or_else(|| {
-        Error::Install(format!(
-            "a versão {} não tem pacote para {}",
-            release.version, env.platform
+        Error::Install(fx(
+            "lib-versao_sem_pacote",
+            &[
+                ("versao", vx(&release.version)),
+                ("sistema", vx(&env.platform)),
+            ],
         ))
     })?;
     if !can_install(pkg, code) {
         return Err(Error::NoAccess);
     }
-    let url = package_url(env.manifest_url(state), pkg).ok_or_else(|| {
-        Error::Install("o autor ainda não publicou o link deste pacote; tente mais tarde".into())
-    })?;
+    let url = package_url(env.manifest_url(state), pkg)
+        .ok_or_else(|| Error::Install(tx("lib-pacote_sem_link").into()))?;
     let file = env.layout.package_file(&product.id, release, pkg);
     env.log.line(&format!(
         "baixando {} {} ({} bytes)",
@@ -284,21 +287,22 @@ pub fn prepare_launcher_update(
     progress: &mut dyn FnMut(Progress),
 ) -> Result<PathBuf> {
     if env.trusted.is_empty() {
-        return Err(Error::Install(
-            "este é um launcher de desenvolvimento (sem chave pública); ele não se atualiza".into(),
-        ));
+        return Err(Error::Install(tx("lib-launcher_de_desenvolvimento").into()));
     }
     if product.id != manifest::LAUNCHER {
-        return Err(Error::Install(format!("'{}' não é o launcher", product.id)));
+        return Err(Error::Install(fx(
+            "lib-nao_e_o_launcher",
+            &[("id", vx(&product.id))],
+        )));
     }
     let name = Path::new(&release.executable)
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
     if !name.to_ascii_lowercase().ends_with(".exe") {
-        return Err(Error::Install(format!(
-            "o pacote do launcher deveria trazer um instalador .exe, não '{}'",
-            release.executable
+        return Err(Error::Install(fx(
+            "lib-instalador_nao_exe",
+            &[("arquivo", vx(&release.executable))],
         )));
     }
     let (pkg, file) = download_release(env, state, product, release, code, cancel, progress)?;
@@ -341,9 +345,12 @@ pub fn run_launcher_installer(installer: &Path) -> Result<()> {
         cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
     }
     cmd.spawn().map_err(|e| {
-        Error::Install(format!(
-            "não consegui abrir o instalador {} ({e})",
-            installer.display()
+        Error::Install(fx(
+            "lib-nao_abri_o_instalador",
+            &[
+                ("arquivo", sx(installer.display().to_string())),
+                ("e", sx(e.to_string())),
+            ],
         ))
     })?;
     Ok(())
@@ -358,7 +365,7 @@ pub fn refresh_shortcuts(env: &Env, product: &Product, desktop: bool) -> Result<
         name: product.name.clone(),
         target: exe.clone(),
         args: vec!["--abrir".into(), product.id.clone()],
-        description: format!("Abre {} (versão ativa)", product.name),
+        description: fx("lib-atalho_descricao", &[("nome", vx(&product.name))]),
         icon: Some(exe.clone()),
     };
     if let Some(dir) = shortcuts::start_menu_dir() {
@@ -379,9 +386,12 @@ pub fn uninstall_product(env: &Env, product_id: &str, name: &str) -> Result<()> 
     let dir = env.layout.product(product_id);
     if dir.exists() {
         std::fs::remove_dir_all(&dir).map_err(|e| {
-            Error::Install(format!(
-                "não consegui remover {} ({e}); feche o programa e tente de novo",
-                dir.display()
+            Error::Install(fx(
+                "lib-nao_removi",
+                &[
+                    ("pasta", sx(dir.display().to_string())),
+                    ("e", sx(e.to_string())),
+                ],
             ))
         })?;
     }
