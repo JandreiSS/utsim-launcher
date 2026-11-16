@@ -1439,9 +1439,14 @@ impl App {
         self.icon(ui, icon, item, icon_alpha);
         let text_x = icon.right() + 14.0;
         let name_w = cell.right() - PAD - text_x;
-        let g = p.layout_job(name_job(item, 21.0));
-        let name_rect = Rect::from_min_size(pos2(text_x, icon.top() + 4.0), g.size());
+        // The name wraps to two lines, then gets a little smaller, and only as a last
+        // resort ends in "…" (with the whole name in a tooltip); the badges below stay put.
+        let by = icon.bottom() + 22.0;
+        let name_top = icon.top() + 4.0;
+        let (g, cut) = fit_name(&p, item, &NAME_CARD, name_w, by - 26.0 - name_top);
+        let name_rect = Rect::from_min_size(pos2(text_x, name_top), g.size());
         p.galley(name_rect.min, g, Color32::WHITE);
+        name_tooltip(ui, name_rect, item, cut);
         let tag = fx("janela-por", &[("autor", vx(&item.author.to_uppercase()))]);
         let tg = p.layout_job(familia::espacado(
             &tag,
@@ -1470,7 +1475,6 @@ impl App {
         );
 
         // Status badges and description.
-        let by = icon.bottom() + 22.0;
         let b = familia::pintar_etiqueta(
             &p,
             pos2(left, by),
@@ -1542,16 +1546,16 @@ impl App {
             } else {
                 col - 8.0
             };
-            familia::pintar_texto(
-                &p,
-                pos2(x, ly),
-                familia::espacado(
-                    &label.to_uppercase(),
-                    familia::mono(9.5),
-                    paleta().texto_apagado,
-                    1.4,
-                ),
-            );
+            // Long labels (e.g. "PLUS RÉCENTE") tighten, then cut, so they never touch the
+            // next column.
+            let label = label.to_uppercase();
+            let mut job =
+                familia::espacado(&label, familia::mono(9.5), paleta().texto_apagado, 1.4);
+            if p.layout_job(job.clone()).size().x > w {
+                job = familia::espacado(&label, familia::mono(8.5), paleta().texto_apagado, 0.6);
+                job.wrap = egui::text::TextWrapping::truncate_at_width(w.max(1.0));
+            }
+            familia::pintar_texto(&p, pos2(x, ly), job);
             let font = if k == 2 {
                 familia::sans(12.5)
             } else {
@@ -1944,8 +1948,10 @@ impl App {
         self.icon(ui, icon, item, icon_alpha);
         let tx = icon.right() + 14.0;
         let name_w = cols.status.unwrap_or(cols.version) - tx - 16.0;
-        let g = p.layout_job(name_job(item, 16.0));
-        p.galley(pos2(tx, cy - g.size().y + 1.0), g, Color32::WHITE);
+        let (g, cut) = fit_name(&p, item, &NAME_ROW, name_w, f32::INFINITY);
+        let name_rect = Rect::from_min_size(pos2(tx, cy - g.size().y + 1.0), g.size());
+        p.galley(name_rect.min, g, Color32::WHITE);
+        name_tooltip(ui, name_rect, item, cut);
         p.galley(
             pos2(tx, cy + 2.0),
             p.layout_job(familia::linha(
@@ -2170,7 +2176,14 @@ impl App {
                 )
                 .show(ctx, |ui| {
                     ui.set_width(520.0_f32.min(ctx.content_rect().width() - 80.0));
-                    ui.label(name_job(&item, 20.0));
+                    let (g, _) = fit_name(
+                        ui.painter(),
+                        &item,
+                        &NAME_NOTES,
+                        ui.available_width(),
+                        f32::INFINITY,
+                    );
+                    ui.label(g);
                     familia::rotulo(
                         ui,
                         tx("janela-notas_da_versao"),
@@ -2369,6 +2382,59 @@ fn status_color(s: &Status) -> Color32 {
 }
 
 /// The name in two tones: the first part white, the second in the product's accent.
+/// How a product name may be fitted: the sizes to try, largest first, and the most lines.
+struct NameFit {
+    sizes: &'static [f32],
+    rows: usize,
+}
+
+const NAME_CARD: NameFit = NameFit {
+    sizes: &[21.0, 19.5, 18.0, 16.5],
+    rows: 2,
+};
+const NAME_ROW: NameFit = NameFit {
+    sizes: &[16.0, 15.0, 14.0],
+    rows: 1,
+};
+const NAME_NOTES: NameFit = NameFit {
+    sizes: &[20.0, 18.0],
+    rows: 2,
+};
+
+/// The name laid out in `width`: the largest size whose lines fit `fit.rows` and
+/// `max_h`; else the smallest, cut with "…" (then `true`).
+fn fit_name(
+    p: &egui::Painter,
+    item: &Item,
+    fit: &NameFit,
+    width: f32,
+    max_h: f32,
+) -> (Arc<egui::Galley>, bool) {
+    let lay = |size: f32| {
+        let mut job = name_job(item, size);
+        job.wrap.max_width = width.max(1.0);
+        job.wrap.max_rows = fit.rows;
+        p.layout_job(job)
+    };
+    for &size in fit.sizes {
+        let g = lay(size);
+        if !g.elided && g.size().y <= max_h && g.size().x <= width + 0.5 {
+            return (g, false);
+        }
+    }
+    let g = lay(fit.sizes.last().copied().unwrap_or(14.0));
+    let cut = g.elided || g.size().x > width + 0.5;
+    (g, cut)
+}
+
+/// The whole name on hover when it was cut.
+fn name_tooltip(ui: &Ui, rect: Rect, item: &Item, cut: bool) {
+    if cut {
+        ui.interact(rect, ui.id().with("nome"), Sense::hover())
+            .on_hover_text(&item.name);
+    }
+}
+
 fn name_job(item: &Item, size: f32) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
     let fmt = |c: Color32| egui::TextFormat {
@@ -2459,5 +2525,68 @@ fn bytes(n: u64) -> String {
         utsim_idiomas::marca_decimal(&format!("{:.1} MB", n as f64 / MB))
     } else {
         format!("{:.0} kB", n as f64 / 1024.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use utsim_launcher_core::install::Layout;
+    use utsim_launcher_core::manifest::Product;
+
+    fn item(name: &str) -> Item {
+        let product = Product {
+            id: "x".into(),
+            name: name.into(),
+            ..Product::default()
+        };
+        let layout = Layout::new(std::env::temp_dir().join("utsim-sem-nada"));
+        catalogo::item(
+            &product,
+            &layout,
+            &LauncherState::default(),
+            "windows-x64",
+            None,
+        )
+    }
+
+    /// The narrowest card: the name always stays inside it.
+    #[test]
+    fn long_names_stay_inside_the_card() {
+        let ctx = Context::default();
+        familia::install(&ctx);
+        let name_w = CARD_MIN_W - 2.0 * PAD - 56.0 - 14.0;
+        let max_h = 56.0 + 22.0 - 26.0 - 4.0;
+        let mut out = ctx.run_ui(Default::default(), |ui| {
+            let p = ui.painter();
+            for (name, cut) in [
+                ("UTSim Seis Sigma", false),
+                ("UTSim Desenvolvimento de Produto", false),
+                ("UTSim Développement de Produit", false),
+                ("UTSim Sviluppo del Prodotto", false),
+                ("UTSim Desarrollo de Producto", false),
+                ("UTSim Product Development", false),
+                (
+                    "UTSim Gerenciamento Integrado de Manutenção Produtiva Total e Confiabilidade",
+                    true,
+                ),
+                (
+                    "UTSimNomeSemEspaçosQueNãoCabeDeJeitoNenhumNumaLinhaSó",
+                    false,
+                ),
+            ] {
+                let it = item(name);
+                let (g, c) = fit_name(p, &it, &NAME_CARD, name_w, max_h);
+                assert!(g.size().x <= name_w + 0.5, "{name}: {}", g.size().x);
+                assert!(g.size().y <= max_h + 0.5, "{name}: {}", g.size().y);
+                assert!(g.rows.len() <= 2, "{name}");
+                if cut {
+                    assert!(c, "{name}");
+                }
+                let (g, _) = fit_name(p, &it, &NAME_ROW, 160.0, f32::INFINITY);
+                assert!(g.size().x <= 160.5 && g.rows.len() == 1, "{name}");
+            }
+        });
+        out.textures_delta.clear();
     }
 }

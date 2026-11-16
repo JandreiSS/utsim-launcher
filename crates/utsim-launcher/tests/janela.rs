@@ -576,3 +576,53 @@ fn the_light_theme_draws() {
     draw(&mut app, vec2(700.0, 500.0), "escuro_de_volta");
     assert!(!familia::tema_claro());
 }
+
+/// Long product names (the product development app and longer) stay inside the cards and
+/// the list rows, in the five languages, wide and narrow.
+#[test]
+fn long_names_fit_the_cards_in_every_language() {
+    let c = code();
+    let home = tempfile::tempdir().unwrap();
+    let env = env(home.path());
+    let mut m = many(&env.layout, &c);
+    m.products.push(product(
+        "produto",
+        "UTSim Desenvolvimento de Produto",
+        "Requisitos, fases e portões, estrutura do produto e casa da qualidade.",
+        vec![release(
+            "0.1.0",
+            "2026-11-13",
+            Some(package(Some(&c), false)),
+        )],
+    ));
+    installed(&env.layout, "produto", "0.1.0");
+    m.products.push(product(
+        "longo",
+        "UTSim Gerenciamento Integrado de Manutenção Produtiva Total e Confiabilidade",
+        "Um nome longo demais, para ver as reticências e a dica com o nome inteiro.",
+        vec![release(
+            "0.1.0",
+            "2026-11-13",
+            Some(package(Some(&c), false)),
+        )],
+    ));
+    for codigo in ["pt-BR", "en", "es", "fr", "it"] {
+        utsim_idiomas::definir_nesta_thread(utsim_idiomas::Idioma::de_codigo(codigo));
+        for view in [ViewMode::Grid, ViewMode::List] {
+            let tag = if view == ViewMode::Grid {
+                "grade"
+            } else {
+                "lista"
+            };
+            for (size, w) in [
+                (vec2(1280.0, 1100.0), "larga"),
+                (vec2(720.0, 1700.0), "estreita"),
+            ] {
+                let mut app =
+                    App::sem_rede(Arc::clone(&env), state(view, Some(&c)), Some(m.clone()));
+                draw(&mut app, size, &format!("nomes_{codigo}_{tag}_{w}"));
+            }
+        }
+    }
+    utsim_idiomas::definir_nesta_thread(None);
+}
