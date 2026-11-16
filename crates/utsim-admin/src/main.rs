@@ -4,9 +4,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::process::ExitCode;
-use std::sync::Arc;
 
-use eframe::egui;
 use utsim_admin::Admin;
 
 const ICON: &[u8] = include_bytes!("../../../assets/icone/familia/launcher_256.png");
@@ -31,20 +29,13 @@ fn main() -> ExitCode {
         eprintln!("erro: não sei onde estão os dados; use --dados <pasta>");
         return ExitCode::FAILURE;
     };
-    let mut viewport = egui::ViewportBuilder::default()
-        .with_title("UTSim Admin")
-        .with_inner_size([1180.0, 760.0])
-        .with_min_inner_size([760.0, 480.0])
-        .with_maximized(true);
-    if let Some((w, h, rgba)) = utsim_ui_tema::familia::png_rgba(ICON) {
-        viewport = viewport.with_icon(Arc::new(egui::IconData {
-            rgba,
-            width: w as u32,
-            height: h as u32,
-        }));
-    }
     let options = eframe::NativeOptions {
-        viewport,
+        viewport: utsim_ui_tema::janela::viewport(
+            "UTSim Admin",
+            [1180.0, 760.0],
+            [760.0, 480.0],
+            Some(ICON),
+        ),
         ..Default::default()
     };
     let result = eframe::run_native(
@@ -55,11 +46,5 @@ fn main() -> ExitCode {
             Ok(Box::new(Admin::open(data)))
         }),
     );
-    match result {
-        Ok(()) => ExitCode::SUCCESS,
-        Err(e) => {
-            eprintln!("erro na janela: {e}");
-            ExitCode::FAILURE
-        }
-    }
+    utsim_ui_tema::janela::saida(result)
 }
