@@ -316,14 +316,19 @@ O manual do testador está em `docs/manual/src/launcher.md`.
 - **Máquina do autor comprometida**: quem roubar a chave privada assina versões aceitas por
   todos os launchers. Mitigação: cópia offline, troca de chave com launcher novo (o `key_id`
   permite duas chaves ao mesmo tempo).
-- **Máquina do testador comprometida**: o código fica em `estado.json` na pasta do usuário, em
-  claro. Usar a proteção de dados do Windows (DPAPI) é uma pendência.
+- **Máquina do testador comprometida**: no Windows, o código fica em `estado.json` cifrado com a
+  proteção de dados do Windows (DPAPI, escopo do usuário, `utsim_launcher_core::protect`), como
+  `"dpapi:<base64>"`. Uma cópia do arquivo levada a outra conta ou outro computador não revela
+  o código (lá ele some e o launcher pede de novo). Quem roda como o próprio usuário, na mesma
+  máquina, ainda consegue abri-lo: a DPAPI não protege contra isso. Um `estado.json` antigo,
+  com o código em claro, é protegido na próxima abertura do launcher. No Linux o código
+  continua em claro (sem serviço equivalente).
 - **O próprio launcher não é assinado** (Authenticode). O Windows SmartScreen avisa na primeira
   execução do instalador. A assinatura de código fica para médio prazo (custo).
 - **Disponibilidade**: o Drive pode limitar downloads de um arquivo muito baixado (cota) ou
   mudar a página de confirmação. O launcher dá a mensagem, mas não contorna o limite.
-- **Atualização do próprio launcher**: ainda manual (novo instalador). O manifesto pode
-  descrever um produto `utsim-launcher`, mas o launcher não se substitui sozinho.
+- **Atualização do próprio launcher**: o produto `launcher` do manifesto é o instalador NSIS
+  (`scripts/publicar-launcher.sh`); o launcher instalado se atualiza sozinho a partir da 0.2.0.
 
 ## 8. Testes
 
@@ -361,9 +366,10 @@ programa. A lógica que a janela chama está em `lib.rs` e `catalogo.rs`, testad
 |---|---|---|
 | Núcleo, ferramenta do autor, app, instalador, testes, documentação | **feito** | 8–10 h |
 | Primeira publicação real e ajuste da página do Drive com um arquivo grande | pendente, com o dono | 1–2 h |
-| Atualização automática do próprio launcher | pendente | 3–4 h |
+| Atualização automática do próprio launcher | **feito** (0.2.0) | 3–4 h |
 | Linux (pacote do launcher, atalho `.desktop` já existe no núcleo) | pendente | 2–3 h |
-| Proteção do código com DPAPI; notas cifradas | pendente | 2–3 h |
+| Proteção do código com DPAPI | **feito** (0.3.2) | 2–3 h |
+| Notas da versão cifradas no manifesto | pendente | 1–2 h |
 | Assinatura de código Authenticode | depende de certificado | 1–2 h (fora o custo) |
 
 ## 10. Pendências e decisões do dono

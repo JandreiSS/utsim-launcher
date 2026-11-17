@@ -151,7 +151,17 @@ impl App {
     /// the manifest at once (the animation, if any, never delays it).
     pub fn new(ctx: &Context, env: Arc<Env>, message: Option<String>, intro: bool) -> Self {
         install::clean_leftovers(&env.layout);
-        let state = LauncherState::load(&env.layout.state_file());
+        let state_file = env.layout.state_file();
+        let state = LauncherState::load(&state_file);
+        // A code left in plain text by an older launcher is protected now (DPAPI on Windows).
+        if LauncherState::code_unprotected_on_disk(&state_file) {
+            match state.save(&state_file) {
+                Ok(()) => env.log.line("código de acesso protegido no estado.json"),
+                Err(e) => env
+                    .log
+                    .line(&format!("não consegui proteger o código: {e}")),
+            }
+        }
         apply_language(&state);
         let manifest = crate::cached_manifest(&env);
         let mut app = Self::sem_rede(env, state, manifest);
