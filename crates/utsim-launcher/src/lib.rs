@@ -170,6 +170,19 @@ fn download_release<'a>(
     let url = package_url(env.manifest_url(state), pkg)
         .ok_or_else(|| Error::Install(tx("lib-pacote_sem_link").into()))?;
     let file = env.layout.package_file(&product.id, release, pkg);
+    // Before spending the download: room for what is still to come plus the decrypted copy.
+    // (The extraction is checked exactly later, from the zip's own index.)
+    let have = [download::partial_path(&file), file.clone()]
+        .iter()
+        .filter_map(|p| std::fs::metadata(p).ok())
+        .map(|m| m.len())
+        .max()
+        .unwrap_or(0)
+        .min(pkg.size);
+    install::ensure_space(
+        &env.layout.downloads(),
+        (pkg.size - have).saturating_add(pkg.size),
+    )?;
     env.log.line(&format!(
         "baixando {} {} ({} bytes)",
         product.id, release.version, pkg.size

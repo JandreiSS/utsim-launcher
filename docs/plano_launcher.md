@@ -349,7 +349,7 @@ O manual do testador está em `docs/manual/src/launcher.md`.
 - Drive: aviso atual em inglês e em português, formato antigo, cota excedida, sem permissão,
   e o download completo passando pelo aviso também na retomada;
 - instalação: troca atômica, versão ativa protegida, remoção de antigas, zip com `..`
-  recusado, pacote alterado rejeitado antes de decifrar;
+  recusado, pacote alterado rejeitado antes de extrair (o SHA-256 é calculado na mesma leitura que decifra); falta de espaço em disco avisada antes de baixar e antes de extrair;
 - relato de erro e registro; atalhos (texto do PowerShell e do `.desktop`).
 
 A janela do launcher (`janela.rs`) e a do administrador são desenhadas sem tela nos testes
