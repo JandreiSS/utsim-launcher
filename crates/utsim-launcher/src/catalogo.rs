@@ -331,10 +331,7 @@ mod tests {
 
     #[test]
     fn names_dates_and_defaults() {
-        assert_eq!(
-            name_parts("UTSim LSS"),
-            ("UTSim".into(), "LSS".into())
-        );
+        assert_eq!(name_parts("UTSim LSS"), ("UTSim".into(), "LSS".into()));
         assert_eq!(name_parts("UTSim"), ("UT".into(), "Sim".into()));
         assert_eq!(
             name_parts("Ferramenta"),
