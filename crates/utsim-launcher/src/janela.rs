@@ -2570,7 +2570,7 @@ mod tests {
         let mut out = ctx.run_ui(Default::default(), |ui| {
             let p = ui.painter();
             for (name, cut) in [
-                ("UTSim Seis Sigma", false),
+                ("UTSim LSS", false),
                 ("UTSim Produto", false),
                 ("UTSim Produit", false),
                 ("UTSim Prodotto", false),

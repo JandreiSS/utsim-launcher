@@ -120,7 +120,7 @@ fn many(layout: &Layout, code: &AccessCode) -> Manifest {
     installed(layout, "utsim", "0.1.0");
     m.products.push(product(
         "lean-seis-sigma",
-        "UTSim Seis Sigma",
+        "UTSim LSS",
         "Gerenciador de projetos Lean Seis Sigma da família UTSim.",
         vec![release(
             "0.1.0",
@@ -161,7 +161,7 @@ fn one() -> Manifest {
     m.sequence = 1;
     m.products.push(product(
         "lean-seis-sigma",
-        "UTSim Seis Sigma",
+        "UTSim LSS",
         "Gerenciador de projetos Lean Seis Sigma da família UTSim.",
         vec![release("0.1.0", "2026-11-01", Some(package(None, true)))],
     ));

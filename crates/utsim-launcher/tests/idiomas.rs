@@ -37,7 +37,7 @@ fn manifest() -> Manifest {
     let mut m = Manifest::new();
     m.sequence = 1;
     for (id, name, date) in [
-        ("lean-seis-sigma", "UTSim Seis Sigma", "2026-11-01"),
+        ("lean-seis-sigma", "UTSim LSS", "2026-11-01"),
         ("ensino", "UTSim Ensino", "2026-10-30"),
     ] {
         let mut p = Product {

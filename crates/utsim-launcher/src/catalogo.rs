@@ -169,7 +169,7 @@ impl Item {
     }
 }
 
-/// Splits a name in two tones: "UTSim Seis Sigma" gives ("UTSim", "Seis Sigma"), "UTSim"
+/// Splits a name in two tones: "UTSim LSS" gives ("UTSim", "LSS"), "UTSim"
 /// gives ("UT", "Sim"), one other word is all accent.
 pub fn name_parts(name: &str) -> (String, String) {
     let name = name.trim();
@@ -332,8 +332,8 @@ mod tests {
     #[test]
     fn names_dates_and_defaults() {
         assert_eq!(
-            name_parts("UTSim Seis Sigma"),
-            ("UTSim".into(), "Seis Sigma".into())
+            name_parts("UTSim LSS"),
+            ("UTSim".into(), "LSS".into())
         );
         assert_eq!(name_parts("UTSim"), ("UT".into(), "Sim".into()));
         assert_eq!(

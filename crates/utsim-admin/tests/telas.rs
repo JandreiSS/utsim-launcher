@@ -34,7 +34,7 @@ fn publish(store: &Store, out: &Output, src: &Path, version: &str) {
     fs::write(src.join("bin/app.exe"), b"exe").unwrap();
     let req = PublishRequest {
         product: "lean-seis-sigma".into(),
-        name: Some("UTSim Seis Sigma".into()),
+        name: Some("UTSim LSS".into()),
         description: Some("Projetos Lean Seis Sigma".into()),
         version: version.into(),
         channel: TESTING.into(),
