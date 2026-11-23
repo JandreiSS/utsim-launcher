@@ -236,7 +236,11 @@ fn long_release_notes_are_trimmed_at_a_line() {
     assert_eq!(utsim_publicar::trim_notes(short), short);
     let long = "- Launcher 0.3.3: espaço em disco conferido, ação é feita\n".repeat(2000);
     let cut = utsim_publicar::trim_notes(&long);
-    assert!(cut.len() <= utsim_publicar::NOTES_LIMIT + 200, "{}", cut.len());
+    assert!(
+        cut.len() <= utsim_publicar::NOTES_LIMIT + 200,
+        "{}",
+        cut.len()
+    );
     assert!(cut.contains("notas resumidas"));
     // Whole lines only.
     let body = cut.split("\n\n(notas").next().unwrap();
