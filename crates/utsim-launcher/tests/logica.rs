@@ -346,7 +346,8 @@ fn missing_local_list_says_where_it_looked() {
     let e = utsim_launcher::fetch_manifest(&env, &mut state)
         .unwrap_err()
         .to_string();
-    assert!(e.contains(&path.display().to_string()), "{e}");
+    assert!(e.contains("manifesto.json"), "{e}");
+    assert!(e.contains("Drive para computador"), "{e}");
     assert!(!e.contains("404"), "{e}");
     // Once the file is there, nothing is reported missing.
     fs::create_dir_all(path.parent().unwrap()).unwrap();
