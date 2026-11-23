@@ -478,6 +478,26 @@ pub struct Published {
 }
 
 /// Encrypts and signs a new package and writes it with the updated manifest.
+/// Largest release notes kept in the manifest. Each launcher downloads the whole manifest at
+/// every opening; whole changelogs as notes made it grow by megabytes.
+pub const NOTES_LIMIT: usize = 16 * 1024;
+
+/// The notes within [`NOTES_LIMIT`], cut at the end of a line, with a note saying so.
+pub fn trim_notes(notes: &str) -> String {
+    if notes.len() <= NOTES_LIMIT {
+        return notes.to_string();
+    }
+    let mut end = NOTES_LIMIT;
+    while !notes.is_char_boundary(end) {
+        end -= 1;
+    }
+    let cut = notes[..end].rfind('\n').unwrap_or(end);
+    format!(
+        "{}\n\n(notas resumidas; a lista completa está no CHANGELOG do projeto)",
+        notes[..cut].trim_end()
+    )
+}
+
 pub fn publish(
     store: &Store,
     out: &Output,
@@ -608,11 +628,12 @@ pub fn publish(
     }
     apply_appearance(p, &req.appearance)?;
     let now = utsim_launcher_core::state::now_rfc3339();
+    let notes = trim_notes(&req.notes);
     match p.releases.iter_mut().find(|r| r.version == req.version) {
         Some(r) => {
             r.packages.retain(|x| x.platform != req.platform);
             r.packages.push(entry);
-            r.notes = req.notes.clone();
+            r.notes = notes;
             r.executable = req.executable.clone();
             r.args = req.args.clone();
         }
@@ -620,11 +641,17 @@ pub fn publish(
             version: req.version.clone(),
             channel: req.channel.clone(),
             published_at: now,
-            notes: req.notes.clone(),
+            notes,
             executable: req.executable.clone(),
             args: req.args.clone(),
             packages: vec![entry],
         }),
+    }
+    // Notes published before the limit shrink too (every launcher reads them as plain text).
+    for r in m.products.iter_mut().flat_map(|p| p.releases.iter_mut()) {
+        if r.notes.len() > NOTES_LIMIT {
+            r.notes = trim_notes(&r.notes);
+        }
     }
     out.save(store, &key, &mut m)?;
     Ok(Published {

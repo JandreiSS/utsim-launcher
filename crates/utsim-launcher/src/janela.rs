@@ -118,7 +118,7 @@ pub struct App {
     /// The manifest shown came from the local copy (no network yet).
     pub offline: bool,
     pub code_input: String,
-    /// Manifest address typed on the code screen (advanced).
+    /// Manifest address being edited (code screen, advanced; settings): starts as the one in use.
     pub url_input: String,
     pub code_error: Option<String>,
     pub editing_code: bool,
@@ -191,11 +191,12 @@ impl App {
 
     /// A window over `manifest` that starts nothing (no network, no animation): for tests.
     pub fn sem_rede(env: Arc<Env>, state: LauncherState, manifest: Option<Manifest>) -> Self {
+        let url_input = env.manifest_url(&state).to_string();
         Self {
             offline: false,
             manifest,
             code_input: String::new(),
-            url_input: state.manifest_url.clone().unwrap_or_default(),
+            url_input,
             code_error: None,
             editing_code: false,
             search: String::new(),
@@ -734,7 +735,7 @@ impl App {
                 }
             }
         }
-        self.state.manifest_url = (!url.is_empty()).then_some(url);
+        self.state.manifest_url = crate::manifest_override(&url);
         self.code_input.clear();
         self.code_error = None;
         self.editing_code = false;
@@ -955,15 +956,60 @@ impl App {
 
         section(ui, tx("janela-lista_de_versoes"));
         ui.label(weak(self.check_line().to_lowercase()));
-        if familia::botao(
-            ui,
-            tx("janela-buscar_agora"),
-            Botao::Contorno,
-            vec2(170.0, 30.0),
-            !busy,
-        )
-        .clicked()
-        {
+        ui.add_space(4.0);
+        ui.label(weak(tx("janela-endereco_em_uso").into()));
+        ui.add(
+            egui::TextEdit::singleline(&mut self.url_input)
+                .hint_text(tx("janela-link_do_manifesto_json_no"))
+                .desired_width(ui.available_width())
+                .margin(Margin::symmetric(10, 7)),
+        );
+        let typed = crate::manifest_override(&self.url_input);
+        let changed = typed != self.state.manifest_url;
+        let has_builtin = !crate::built_in_manifest_url().trim().is_empty();
+        let mut fetch = false;
+        ui.horizontal(|ui| {
+            if changed {
+                if familia::botao(
+                    ui,
+                    tx("janela-salvar_e_buscar"),
+                    Botao::Primario,
+                    vec2(170.0, 30.0),
+                    !busy,
+                )
+                .clicked()
+                {
+                    self.state.manifest_url = typed.clone();
+                    fetch = true;
+                }
+            } else if familia::botao(
+                ui,
+                tx("janela-buscar_agora"),
+                Botao::Contorno,
+                vec2(170.0, 30.0),
+                !busy,
+            )
+            .clicked()
+            {
+                fetch = true;
+            }
+            if has_builtin
+                && (self.state.manifest_url.is_some() || changed)
+                && familia::botao(
+                    ui,
+                    tx("janela-usar_o_padrao"),
+                    Botao::Contorno,
+                    vec2(150.0, 30.0),
+                    !busy,
+                )
+                .clicked()
+            {
+                self.use_built_in_url();
+                fetch = true;
+            }
+        });
+        if fetch {
+            self.save_state();
             self.refresh(ui.ctx());
         }
 
@@ -1032,6 +1078,7 @@ impl App {
     fn main_area(&mut self, ui: &mut Ui, icon_alpha: f32) {
         let items = self.items();
         self.launcher_banner(ui);
+        self.missing_list_banner(ui);
         self.toolbar(ui, &items);
         let body = ui.available_rect_before_wrap();
         let Some(m) = &self.manifest else {
@@ -1219,6 +1266,70 @@ impl App {
     /// The strip that lists the updates waiting, with "Atualizar todos".
     /// "Nova versão do launcher X.Y.Z — Atualizar", above everything (not a modal). While it
     /// downloads, the progress takes the place of the button.
+    /// Goes back to the address built into this launcher (forgets the override).
+    fn use_built_in_url(&mut self) {
+        self.state.manifest_url = None;
+        self.url_input = self.env.manifest_url(&self.state).to_string();
+    }
+
+    /// The list address is a local file that is not there (desktop Drive not mounted): says
+    /// where it looked and offers the built-in address.
+    fn missing_list_banner(&mut self, ui: &mut Ui) {
+        let url = self.env.manifest_url(&self.state).to_string();
+        let has_builtin = !crate::built_in_manifest_url().trim().is_empty();
+        // Only after a failed fetch (no disk check on every frame).
+        if !self.status_is_error || self.busy() || !has_builtin || self.state.manifest_url.is_none()
+        {
+            return;
+        }
+        let Some(path) = crate::missing_local_list(&url) else {
+            return;
+        };
+        ui.add_space(10.0);
+        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 52.0), Sense::hover());
+        let p = ui.painter().clone();
+        p.rect(
+            r,
+            CornerRadius::same(10),
+            paleta().erro.gamma_multiply(0.08),
+            Stroke::new(1.0, paleta().erro.gamma_multiply(0.5)),
+            StrokeKind::Inside,
+        );
+        let bw = 150.0;
+        let button = Rect::from_min_size(
+            pos2(r.right() - 14.0 - bw, r.center().y - 17.0),
+            vec2(bw, 34.0),
+        );
+        let x = r.left() + 18.0;
+        let text = fx(
+            "lib-lista_local_nao_encontrada",
+            &[("path", vx(&path.display()))],
+        );
+        let g = p.layout_job(familia::linha(
+            &text,
+            familia::sans(13.0),
+            paleta().texto,
+            button.left() - x - 16.0,
+        ));
+        let tr = Rect::from_min_size(pos2(x, r.center().y - g.size().y / 2.0), g.size());
+        p.galley(tr.min, g, Color32::WHITE);
+        ui.allocate_rect(tr, Sense::hover()).on_hover_text(text);
+        if familia::botao_em(
+            ui,
+            button,
+            tx("janela-usar_o_padrao"),
+            Botao::Primario,
+            true,
+        )
+        .clicked()
+        {
+            self.use_built_in_url();
+            self.save_state();
+            self.refresh(ui.ctx());
+        }
+        ui.add_space(4.0);
+    }
+
     fn launcher_banner(&mut self, ui: &mut Ui) {
         let Some((_, release)) = self.launcher_update() else {
             return;

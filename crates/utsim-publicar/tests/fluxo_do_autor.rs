@@ -229,3 +229,16 @@ fn manifest_signed_by_another_key_is_not_overwritten() {
     );
     assert!(matches!(r, Err(Error::Signature(_))), "{r:?}");
 }
+
+#[test]
+fn long_release_notes_are_trimmed_at_a_line() {
+    let short = "- uma linha\n";
+    assert_eq!(utsim_publicar::trim_notes(short), short);
+    let long = "- Launcher 0.3.3: espaço em disco conferido, ação é feita\n".repeat(2000);
+    let cut = utsim_publicar::trim_notes(&long);
+    assert!(cut.len() <= utsim_publicar::NOTES_LIMIT + 200, "{}", cut.len());
+    assert!(cut.contains("notas resumidas"));
+    // Whole lines only.
+    let body = cut.split("\n\n(notas").next().unwrap();
+    assert!(body.lines().all(|l| l.ends_with("feita")));
+}

@@ -51,7 +51,20 @@ trap 'rm -rf "$PASTA"' EXIT
 bash scripts/instalador-launcher.sh "$VERSAO" "$PASTA/launcher"
 EXE="utsim-launcher-v${VERSAO}-windows-x64-instalador.exe"
 [ -f "$PASTA/launcher/$EXE" ] || { echo "erro: instalador $EXE não foi gerado" >&2; exit 1; }
-bash scripts/notas-versao.sh "$VERSAO" > "$PASTA/notas.md" || echo "(sem notas)" > "$PASTA/notas.md"
+# Só as linhas desta versão do launcher (com as linhas de continuação). O CHANGELOG inteiro
+# como notas fazia o manifesto crescer centenas de kB a cada publicação.
+if grep -q "^## \[launcher-$VERSAO\]" CHANGELOG.md; then
+    bash scripts/notas-versao.sh "launcher-$VERSAO" > "$PASTA/notas.md"
+else
+    awk -v alvo="Launcher $VERSAO:" '
+        /^## \[/ { n++; dentro = 0; next }
+        n != 1 { next }
+        /^- / { dentro = index($0, alvo) == 3 }
+        /^[^ ]/ && !/^- / { dentro = 0 }
+        dentro { print }
+    ' CHANGELOG.md > "$PASTA/notas.md"
+fi
+[ -s "$PASTA/notas.md" ] || echo "(sem notas)" > "$PASTA/notas.md"
 
 "$PUBLICAR" publicar \
     --saida "$SAIDA" \

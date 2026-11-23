@@ -329,3 +329,40 @@ fn launcher_channel_follows_the_tester() {
     s.channels.insert(LAUNCHER.into(), STABLE.into());
     assert_eq!(utsim_launcher::launcher_channel(&s), STABLE);
 }
+
+#[test]
+fn missing_local_list_says_where_it_looked() {
+    // The list address points at the desktop Drive folder and the drive is not mounted: the
+    // message names the file instead of "HTTP 404".
+    let drive = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let key = signature::generate().unwrap();
+    let path = drive.path().join("Meu Drive").join("manifesto.json");
+    let url = transport::file_url(&path);
+    assert_eq!(utsim_launcher::missing_local_list(&url), Some(path.clone()));
+    assert_eq!(utsim_launcher::missing_local_list(MANIFEST_URL), None);
+    let env = env(home.path(), &key, Arc::new(HttpTransport::new()), &url);
+    let mut state = LauncherState::default();
+    let e = utsim_launcher::fetch_manifest(&env, &mut state)
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains(&path.display().to_string()), "{e}");
+    assert!(!e.contains("404"), "{e}");
+    // Once the file is there, nothing is reported missing.
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, "{}").unwrap();
+    assert_eq!(utsim_launcher::missing_local_list(&url), None);
+}
+
+#[test]
+fn typed_address_equal_to_the_built_in_is_no_override() {
+    assert_eq!(utsim_launcher::manifest_override("  "), None);
+    assert_eq!(
+        utsim_launcher::manifest_override(utsim_launcher::built_in_manifest_url()),
+        None
+    );
+    assert_eq!(
+        utsim_launcher::manifest_override(" file:///G:/x.json "),
+        Some("file:///G:/x.json".into())
+    );
+}

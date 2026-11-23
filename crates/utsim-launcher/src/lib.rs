@@ -100,6 +100,12 @@ pub fn fetch_manifest(env: &Env, state: &mut LauncherState) -> Result<Manifest> 
         return Err(Error::Drive(drive::interpret(&page, &url).message().into()));
     }
     if resp.status != 200 {
+        if let Some(path) = missing_local_list(&url) {
+            return Err(Error::Network(fx(
+                "lib-lista_local_nao_encontrada",
+                &[("path", sx(path.display().to_string()))],
+            )));
+        }
         return Err(Error::Network(fx(
             "lib-lista_respondeu_http",
             &[("status", sx(resp.status.to_string()))],
@@ -115,6 +121,19 @@ pub fn fetch_manifest(env: &Env, state: &mut LauncherState) -> Result<Manifest> 
         m.products.len()
     ));
     Ok(m)
+}
+
+/// The file a `file://` list address points at, when that file does not exist (a desktop Drive
+/// folder that is not mounted, say). `None` for network addresses and for files that exist.
+pub fn missing_local_list(url: &str) -> Option<PathBuf> {
+    transport::file_url_path(url.trim()).filter(|p| !p.is_file())
+}
+
+/// The address to keep in the state for what was typed: empty or the built-in one means
+/// "use the built-in address" (so a later launcher with a new built-in address follows it).
+pub fn manifest_override(typed: &str) -> Option<String> {
+    let typed = typed.trim();
+    (!typed.is_empty() && typed != built_in_manifest_url().trim()).then(|| typed.to_string())
 }
 
 /// The last manifest accepted, for working offline (checked again).
