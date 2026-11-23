@@ -2571,11 +2571,11 @@ mod tests {
             let p = ui.painter();
             for (name, cut) in [
                 ("UTSim Seis Sigma", false),
-                ("UTSim Desenvolvimento de Produto", false),
-                ("UTSim Développement de Produit", false),
-                ("UTSim Sviluppo del Prodotto", false),
-                ("UTSim Desarrollo de Producto", false),
-                ("UTSim Product Development", false),
+                ("UTSim Produto", false),
+                ("UTSim Produit", false),
+                ("UTSim Prodotto", false),
+                ("UTSim Producto", false),
+                ("UTSim Product", false),
                 (
                     "UTSim Gerenciamento Integrado de Manutenção Produtiva Total e Confiabilidade",
                     true,

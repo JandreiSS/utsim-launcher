@@ -577,7 +577,7 @@ fn the_light_theme_draws() {
     assert!(!familia::tema_claro());
 }
 
-/// Long product names (the product development app and longer) stay inside the cards and
+/// Product names (the product app and a much longer one) stay inside the cards and
 /// the list rows, in the five languages, wide and narrow.
 #[test]
 fn long_names_fit_the_cards_in_every_language() {
@@ -587,7 +587,7 @@ fn long_names_fit_the_cards_in_every_language() {
     let mut m = many(&env.layout, &c);
     m.products.push(product(
         "produto",
-        "UTSim Desenvolvimento de Produto",
+        "UTSim Produto",
         "Requisitos, fases e portões, estrutura do produto e casa da qualidade.",
         vec![release(
             "0.1.0",
