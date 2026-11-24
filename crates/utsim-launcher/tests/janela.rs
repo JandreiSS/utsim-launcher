@@ -480,7 +480,8 @@ fn the_product_menu_stays_short_with_many_versions() {
     for k in [19, 20, 21, 22] {
         installed(&env.layout, "utsim", &format!("0.2.0-dev.{k}"));
     }
-    for (theme, tag) in [(Theme::Dark, "escuro"), (Theme::Light, "claro")] {
+    // A saved light theme changes nothing: the launcher is always dark, like the family.
+    for (theme, tag) in [(Theme::Dark, "escuro"), (Theme::Light, "claro_ignorado")] {
         let mut st = state(ViewMode::Grid, None);
         st.channels.insert("utsim".into(), TESTING.into());
         st.theme = theme;
@@ -540,40 +541,30 @@ fn the_product_menu_stays_short_with_many_versions() {
         assert!(texts.contains("Mais versões (17)"), "{texts}");
         assert!(texts.contains("0.2.0-dev.22"), "{texts}");
         assert!(!texts.contains("0.2.0-dev.17"), "{texts}");
-        assert_eq!(familia::tema_claro(), theme == Theme::Light);
+        assert!(!familia::tema_claro());
     }
 }
 
-/// The light theme draws the grid, the list, the settings and the code screen.
+/// A state saved with the light theme (older versions had the choice) still draws dark,
+/// and the settings no longer offer a theme.
 #[test]
-fn the_light_theme_draws() {
+fn a_saved_light_theme_is_ignored() {
     let c = code();
     let home = tempfile::tempdir().unwrap();
     let env = env(home.path());
     let m = many(&env.layout, &c);
-    for view in [ViewMode::Grid, ViewMode::List] {
-        let mut st = state(view, Some(&c));
-        st.theme = Theme::Light;
-        let mut app = App::sem_rede(Arc::clone(&env), st, Some(m.clone()));
-        let tag = if view == ViewMode::Grid {
-            "grade"
-        } else {
-            "lista"
-        };
-        draw(&mut app, vec2(1280.0, 820.0), &format!("claro_{tag}"));
-        assert!(familia::tema_claro());
-    }
     let mut st = state(ViewMode::Grid, Some(&c));
     st.theme = Theme::Light;
     let mut app = App::sem_rede(Arc::clone(&env), st.clone(), Some(m.clone()));
+    draw(&mut app, vec2(1280.0, 820.0), "tema_salvo_claro_grade");
+    assert!(!familia::tema_claro());
+    let mut app = App::sem_rede(env, st, Some(m));
     app.settings_open = true;
-    draw(&mut app, vec2(1280.0, 860.0), "claro_configuracoes");
-    let mut app = App::sem_rede(Arc::clone(&env), st, Some(m));
-    app.editing_code = true;
-    draw(&mut app, vec2(1100.0, 720.0), "claro_codigo");
-    // Back to dark when the setting says so.
-    let mut app = App::sem_rede(env, state(ViewMode::Grid, Some(&c)), None);
-    draw(&mut app, vec2(700.0, 500.0), "escuro_de_volta");
+    draw(
+        &mut app,
+        vec2(1280.0, 860.0),
+        "tema_salvo_claro_configuracoes",
+    );
     assert!(!familia::tema_claro());
 }
 

@@ -16,7 +16,7 @@ use utsim_launcher_core::code::AccessCode;
 use utsim_launcher_core::download::Progress;
 use utsim_launcher_core::install;
 use utsim_launcher_core::manifest::{self, Manifest, Product, Release};
-use utsim_launcher_core::state::{self, LauncherState, SortOrder, Theme, ViewMode};
+use utsim_launcher_core::state::{self, LauncherState, SortOrder, ViewMode};
 use utsim_ui_tema::familia::{self, Botao, Icone, paleta};
 
 use crate::Env;
@@ -542,7 +542,6 @@ impl App {
         let ctx = ui.ctx().clone();
         self.poll_task(&ctx);
         self.slots.clear();
-        self.apply_theme(&ctx);
 
         // The opening animation: any key or click skips it; the system's "less motion" too.
         let now = ui.input(|i| i.time);
@@ -1014,22 +1013,6 @@ impl App {
         }
 
         section(ui, tx("janela-aparencia"));
-        let mut theme = self.state.theme;
-        ui.horizontal(|ui| {
-            for (t, name) in [
-                (Theme::Dark, tx("janela-escuro")),
-                (Theme::Light, tx("janela-claro")),
-                (Theme::System, tx("janela-seguir_o_windows")),
-            ] {
-                ui.radio_value(&mut theme, t, name);
-            }
-        });
-        if theme != self.state.theme {
-            self.state.theme = theme;
-            self.save_state();
-            self.apply_theme(ui.ctx());
-        }
-        ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.label(tx("janela-idioma"));
             let mut i = utsim_idiomas::atual();
@@ -1810,18 +1793,6 @@ impl App {
     pub fn product_menu_of(&mut self, ui: &mut Ui, id: &str) {
         if let Some(item) = self.items().into_iter().find(|i| i.id == id) {
             self.product_menu(ui, &item);
-        }
-    }
-
-    /// Light or dark palette as the settings say ("Seguir o Windows" reads the system's).
-    fn apply_theme(&self, ctx: &Context) {
-        let light = match self.state.theme {
-            Theme::Dark => false,
-            Theme::Light => true,
-            Theme::System => ctx.system_theme() == Some(egui::Theme::Light),
-        };
-        if light != familia::tema_claro() {
-            familia::usar_claro(ctx, light);
         }
     }
 
