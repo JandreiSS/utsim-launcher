@@ -1,7 +1,7 @@
-//! The author's side of the launcher. It **only writes local files**: the signing key and
-//! the tester list stay in the author's profile folder (never in a repository), and the
-//! encrypted packages and the signed manifest go to a folder the author chooses, normally
-//! the Google Drive folder synced by Drive for desktop. Nothing is sent to the internet.
+//! The author's side of the launcher. The signing key and the tester list stay in the
+//! author's profile folder (never in a repository), and the encrypted packages and the signed
+//! manifest go to a local publication folder. Only the [`github`] module sends anything to
+//! the internet: it uploads a package as a GitHub release asset, then the manifest.
 //!
 //! ```text
 //! <dados>/chaves/privada.txt          ed25519 private key (keep a backup offline)
@@ -25,6 +25,8 @@ use utsim_launcher_core::code::AccessCode;
 use utsim_launcher_core::crypto::{Argon2Params, ContentKey};
 use utsim_launcher_core::manifest::{self, Access, Manifest, Product, Release};
 use utsim_launcher_core::{Error, Result, SigningKey, VerifyingKey, drive, package, signature};
+
+pub mod github;
 
 /// Name of the manifest file in the publication folder.
 pub const MANIFEST_FILE: &str = "manifesto.json";

@@ -2223,6 +2223,8 @@ impl App {
             tx("janela-via_pasta_local")
         } else if url.contains("google.com") {
             tx("janela-via_drive")
+        } else if url.starts_with("https://github.com/") {
+            tx("janela-via_github")
         } else {
             tx("janela-via_rede")
         };

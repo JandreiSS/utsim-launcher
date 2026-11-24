@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Publica o próprio UTSim Launcher pelo manifesto: gera o instalador NSIS
 # (scripts/instalador-launcher.sh), cifra, assina e grava o pacote como o produto "launcher" na
-# pasta de publicação (a pasta do Google Drive), aberto para todos (sem código).
+# pasta de publicação (local), aberto para todos (sem código).
 # O launcher instalado vê a versão nova, mostra "Nova versão do launcher" e se atualiza sozinho.
-# Não envia nada à internet: o Google Drive para computador sincroniza a pasta.
+# Não envia nada à internet: depois, 'utsim-publicar github' sobe o pacote e o
+# manifesto para o GitHub.
 #
 # Uso: bash scripts/publicar-launcher.sh <pasta_de_publicação> [canal] [versão]
 #   canal   padrão: estavel (todo launcher vê). Com testes, só quem segue testes em algum app.
@@ -12,7 +13,7 @@
 #           faria se atualizar sem parar.
 #
 # Antes: cargo build --release -p utsim-publicar (o launcher é compilado aqui).
-# Depois: compartilhe o pacote no Drive e rode 'utsim-publicar link' (o script mostra o comando).
+# Depois: utsim-publicar github --saida <pasta> --produto launcher --versao <versão>.
 
 set -eu
 

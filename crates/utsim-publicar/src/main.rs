@@ -11,7 +11,7 @@ use utsim_publicar::{Appearance, Output, PublishRequest, Source, Store};
 #[command(
     name = "utsim-publicar",
     version,
-    about = "Ferramenta do autor do launcher do UTSim: chaves, testadores, pacotes cifrados e manifesto assinado.\nSó escreve arquivos locais; não envia nada à internet."
+    about = "Ferramenta do autor do launcher do UTSim: chaves, testadores, pacotes cifrados e manifesto assinado.\nSó os comandos 'github' e 'manifesto-github' enviam algo à internet (pelo gh)."
 )]
 struct Cli {
     /// Pasta dos dados privados (padrão: %APPDATA%\UTSim, ou UTSIM_PUBLICAR_DADOS)
@@ -50,6 +50,32 @@ enum Cmd {
         plataforma: Option<String>,
         /// Link de compartilhamento do Drive ("qualquer pessoa com o link")
         link: String,
+    },
+    /// Sobe o pacote como asset da release v<versao> do repositório do produto no GitHub,
+    /// grava o endereço no manifesto, deixa só as versões mais novas e envia o manifesto
+    Github {
+        #[arg(long)]
+        saida: PathBuf,
+        #[arg(long)]
+        produto: String,
+        #[arg(long)]
+        versao: String,
+        #[arg(long)]
+        plataforma: Option<String>,
+        /// Repositório de downloads (dono/nome ou só nome; padrão: o do produto)
+        #[arg(long)]
+        repo: Option<String>,
+        /// Quantas versões do produto ficam no manifesto e no GitHub
+        #[arg(long, default_value_t = utsim_publicar::github::KEEP)]
+        manter: usize,
+    },
+    /// Envia o manifesto assinado para a release "manifesto" do repositório do launcher
+    ManifestoGithub {
+        #[arg(long)]
+        saida: PathBuf,
+        /// Outro repositório (dono/nome), para testes
+        #[arg(long)]
+        repo: Option<String>,
     },
     /// Refaz o acesso às versões publicadas para os testadores ativos agora
     Reembrulhar {
@@ -348,13 +374,9 @@ fn run(cli: Cli) -> Result<(), String> {
                 p.sequence
             );
             println!();
-            println!("Próximos passos:");
-            println!("  1. Espere o Google Drive para computador enviar o pacote.");
+            println!("Próximo passo (sobe o pacote e o manifesto para o GitHub):");
             println!(
-                "  2. No Drive, compartilhe o pacote como \"qualquer pessoa com o link\" e copie o link."
-            );
-            println!(
-                "  3. utsim-publicar link --saida \"{}\" --produto {produto} --versao {versao} --plataforma {} \"<link>\"",
+                "  utsim-publicar github --saida \"{}\" --produto {produto} --versao {versao} --plataforma {}",
                 out.dir.display(),
                 req.platform
             );
@@ -378,6 +400,54 @@ fn run(cli: Cli) -> Result<(), String> {
             .map_err(e)?;
             println!("Link gravado: {url}");
             println!("O manifesto foi reassinado; o Drive sincroniza sozinho.");
+        }
+        Cmd::Github {
+            saida,
+            produto,
+            versao,
+            plataforma,
+            repo,
+            manter,
+        } => {
+            use utsim_publicar::github;
+            let out = Output { dir: saida };
+            let repo = github::full_repo(&produto, repo.as_deref()).map_err(e)?;
+            println!("Enviando {produto} {versao} para {repo}...");
+            let r = github::upload(
+                &store,
+                &out,
+                &github::GhCli,
+                &produto,
+                &versao,
+                &platform(plataforma),
+                &repo,
+                manter,
+            )
+            .map_err(e)?;
+            println!("Pacote: {}", r.url);
+            for v in &r.pruned {
+                println!("Saiu do manifesto: {produto} {v}");
+            }
+            for (v, onde) in &r.elsewhere {
+                println!("  {v} não estava no GitHub; apague à mão se quiser: {onde}");
+            }
+            println!(
+                "Manifesto (sequência {}) enviado: {}",
+                r.sequence,
+                github::manifest_url()
+            );
+        }
+        Cmd::ManifestoGithub { saida, repo } => {
+            let out = Output { dir: saida };
+            let key = store.signing_key().map_err(e)?;
+            let m = out.load(&key).map_err(e)?;
+            let url = utsim_publicar::github::send_manifest(
+                &utsim_publicar::github::GhCli,
+                &out,
+                repo.as_deref(),
+            )
+            .map_err(e)?;
+            println!("Manifesto (sequência {}) enviado: {url}", m.sequence);
         }
         Cmd::Reembrulhar {
             saida,
