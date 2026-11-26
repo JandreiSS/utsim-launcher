@@ -44,6 +44,7 @@ pub fn repo_for(product: &str) -> Option<&'static str> {
         "estatistica" => "utsim-estatistica",
         "ensino" => "utsim-ensino",
         "produto" => "utsim-produto",
+        "ambiental" => "utsim-ambiental",
         _ => return None,
     })
 }
