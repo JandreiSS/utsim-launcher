@@ -119,6 +119,7 @@ janela-sem_endereco_da_lista = SEM ENDEREÇO DA LISTA
 janela-via_pasta_local = VIA PASTA LOCAL
 janela-via_drive = VIA DRIVE
 janela-via_github = VIA GITHUB
+janela-versao_so_com_codigo = Esta versão antiga só abre com código de testador; escolha uma versão mais nova.
 janela-via_rede = VIA REDE
 janela-verificando = VERIFICANDO...
 janela-lista_guardada_sem_conexao = LISTA GUARDADA · SEM CONEXÃO

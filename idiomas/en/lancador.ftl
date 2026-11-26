@@ -119,6 +119,7 @@ janela-sem_endereco_da_lista = NO LIST ADDRESS
 janela-via_pasta_local = VIA LOCAL FOLDER
 janela-via_drive = VIA DRIVE
 janela-via_github = VIA GITHUB
+janela-versao_so_com_codigo = This old version only opens with a tester code; choose a newer version.
 janela-via_rede = VIA NETWORK
 janela-verificando = CHECKING...
 janela-lista_guardada_sem_conexao = SAVED LIST · NO CONNECTION

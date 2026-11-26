@@ -119,6 +119,7 @@ janela-sem_endereco_da_lista = SIN DIRECCIÓN DE LA LISTA
 janela-via_pasta_local = POR CARPETA LOCAL
 janela-via_drive = POR DRIVE
 janela-via_github = POR GITHUB
+janela-versao_so_com_codigo = Esta versión antigua solo se abre con código de probador; elija una versión más nueva.
 janela-via_rede = POR RED
 janela-verificando = VERIFICANDO...
 janela-lista_guardada_sem_conexao = LISTA GUARDADA · SIN CONEXIÓN

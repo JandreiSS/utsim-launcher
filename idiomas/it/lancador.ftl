@@ -121,6 +121,7 @@ janela-sem_endereco_da_lista = SENZA INDIRIZZO DELL'ELENCO
 janela-via_pasta_local = DA CARTELLA LOCALE
 janela-via_drive = DA DRIVE
 janela-via_github = DA GITHUB
+janela-versao_so_com_codigo = Questa versione vecchia si apre solo con un codice di tester; scegli una versione più recente.
 janela-via_rede = DA RETE
 janela-verificando = VERIFICA...
 janela-lista_guardada_sem_conexao = ELENCO SALVATO · SENZA CONNESSIONE

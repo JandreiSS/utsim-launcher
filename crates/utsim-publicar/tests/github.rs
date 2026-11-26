@@ -144,6 +144,7 @@ fn publish(store: &Store, out: &Output, src: &Path, version: &str) {
             args: vec![],
             notes: format!("Novidades da {version}"),
             replace: false,
+            restricted: false,
             appearance: Default::default(),
         },
         Argon2Params::TEST,

@@ -129,8 +129,9 @@ struct PublicarArgs {
     descricao: Option<String>,
     #[arg(long)]
     versao: String,
-    /// Canal: estavel ou testes
-    #[arg(long, default_value = manifest::TESTING)]
+    /// Canal: estavel (padrão) ou testes. O launcher 0.4.0 mostra todos; o canal só conta
+    /// para launchers antigos, que sem código veem só o estavel
+    #[arg(long, default_value = manifest::STABLE)]
     canal: String,
     /// Plataforma do pacote (padrão: a desta máquina)
     #[arg(long)]
@@ -156,6 +157,9 @@ struct PublicarArgs {
     /// Troca um pacote já publicado desta versão e plataforma
     #[arg(long)]
     substituir: bool,
+    /// Só testadores com código instalam (padrão: aberto para todos)
+    #[arg(long)]
+    restrito: bool,
     /// Cor de destaque do produto no launcher (#RRGGBB)
     #[arg(long)]
     cor: Option<String>,
@@ -325,6 +329,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 notas,
                 notas_texto,
                 substituir,
+                restrito,
                 cor,
                 subtitulo,
                 autor,
@@ -353,6 +358,7 @@ fn run(cli: Cli) -> Result<(), String> {
                 args,
                 notes,
                 replace: substituir,
+                restricted: restrito,
                 appearance: Appearance {
                     color: cor,
                     subtitle: subtitulo,
@@ -361,13 +367,21 @@ fn run(cli: Cli) -> Result<(), String> {
                 },
             };
             let out = Output { dir: saida };
-            println!(
-                "Cifrando e embrulhando a chave para cada testador (alguns segundos por testador)..."
-            );
+            if restrito {
+                println!(
+                    "Cifrando e embrulhando a chave para cada testador (alguns segundos por testador)..."
+                );
+            } else {
+                println!("Cifrando o pacote (aberto para todos: a chave vai no manifesto)...");
+            }
             let p =
                 utsim_publicar::publish(&store, &out, &req, Argon2Params::DEFAULT).map_err(e)?;
             println!("Pacote: {} ({} bytes)", p.package_file.display(), p.size);
-            println!("Testadores com acesso: {}", p.wraps);
+            if restrito {
+                println!("Testadores com acesso: {}", p.wraps);
+            } else {
+                println!("Acesso: aberto para todos");
+            }
             println!(
                 "Manifesto: {} (sequência {})",
                 out.manifest_path().display(),

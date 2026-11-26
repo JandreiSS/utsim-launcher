@@ -388,6 +388,10 @@ pub struct PublishRequest {
     pub notes: String,
     /// Replace a package already published for this version and platform.
     pub replace: bool,
+    /// Only testers with an access code install it (the content key is wrapped for each
+    /// tester). Off by default: since 25/11/2026 every app is open to everyone, and the
+    /// content key goes into the manifest (the signature still proves where it came from).
+    pub restricted: bool,
     /// How the product looks in the launcher (fields left `None` keep what is there).
     pub appearance: Appearance,
 }
@@ -559,10 +563,15 @@ pub fn publish(
         )));
     }
 
-    let open = m
-        .product(&req.product)
-        .is_some_and(|p| p.access(&req.channel) == Access::Open);
-    let codes = store.codes_for(&req.channel)?;
+    let open = !req.restricted
+        || m.product(&req.product)
+            .is_some_and(|p| p.access(&req.channel) == Access::Open);
+    // An open package needs no wrap: the key is in the manifest for everyone.
+    let codes = if open {
+        Vec::new()
+    } else {
+        store.codes_for(&req.channel)?
+    };
     if codes.is_empty() && !open {
         return Err(Error::Install(format!(
             "nenhum testador ativo tem acesso ao canal '{}'; cadastre um com 'utsim-publicar testador adicionar'",
@@ -629,6 +638,9 @@ pub fn publish(
         p.description = d.clone();
     }
     apply_appearance(p, &req.appearance)?;
+    if open {
+        p.access.insert(req.channel.clone(), Access::Open);
+    }
     let now = utsim_launcher_core::state::now_rfc3339();
     let notes = trim_notes(&req.notes);
     match p.releases.iter_mut().find(|r| r.version == req.version) {

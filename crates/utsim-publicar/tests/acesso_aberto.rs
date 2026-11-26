@@ -27,6 +27,7 @@ fn request(version: &str, src: &Path) -> PublishRequest {
         args: vec![],
         notes: String::new(),
         replace: false,
+        restricted: true,
         appearance: Appearance::default(),
     }
 }

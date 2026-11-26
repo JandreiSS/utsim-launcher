@@ -10,7 +10,7 @@ use utsim_launcher::catalogo;
 use utsim_launcher_core::code::AccessCode;
 use utsim_launcher_core::crypto::Argon2Params;
 use utsim_launcher_core::install::{self, Layout};
-use utsim_launcher_core::manifest::{LAUNCHER, Manifest, Product, Release, STABLE, TESTING};
+use utsim_launcher_core::manifest::{self, LAUNCHER, Manifest, Product, Release, STABLE, TESTING};
 use utsim_launcher_core::report::Log;
 use utsim_launcher_core::state::LauncherState;
 use utsim_launcher_core::transport::{self, Canned, HttpTransport, MemoryTransport, Transport};
@@ -321,13 +321,15 @@ fn launcher_updates_itself_from_the_signed_manifest() {
 }
 
 #[test]
-fn launcher_channel_follows_the_tester() {
+fn launcher_sees_every_release_whatever_the_old_channels() {
+    // Since 0.4.0 there are no channels: the channels an older launcher saved stay in the
+    // state but filter nothing, for the apps and for the launcher's own updates.
     let mut s = LauncherState::default();
-    assert_eq!(utsim_launcher::launcher_channel(&s), STABLE);
+    assert_eq!(utsim_launcher::launcher_channel(&s), manifest::ALL);
     s.channels.insert("utsim".into(), TESTING.into());
-    assert_eq!(utsim_launcher::launcher_channel(&s), TESTING);
     s.channels.insert(LAUNCHER.into(), STABLE.into());
-    assert_eq!(utsim_launcher::launcher_channel(&s), STABLE);
+    assert_eq!(utsim_launcher::launcher_channel(&s), manifest::ALL);
+    assert_eq!(s.channel("utsim"), manifest::ALL);
 }
 
 #[test]

@@ -44,6 +44,7 @@ fn publish(store: &Store, out: &Output, src: &Path, version: &str) {
         args: vec![],
         notes: String::new(),
         replace: false,
+        restricted: true,
         appearance: Appearance {
             color: Some("#4FD06A".into()),
             ..Appearance::default()

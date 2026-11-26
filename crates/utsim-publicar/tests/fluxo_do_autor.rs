@@ -27,6 +27,7 @@ fn request(version: &str, channel: &str, src: &Path) -> PublishRequest {
         args: vec!["--novo".into()],
         notes: format!("Novidades da {version}"),
         replace: false,
+        restricted: true,
         appearance: Default::default(),
     }
 }

@@ -138,8 +138,6 @@ pub struct App {
     less_motion: Arc<AtomicBool>,
     /// Icon places of this frame (where the opening animation lands them).
     slots: Vec<Voo>,
-    /// The code screen was already offered in this session.
-    code_offered: bool,
     /// The official logo of the top bar.
     logo: Option<TextureHandle>,
     /// The settings window is open.
@@ -210,7 +208,6 @@ impl App {
             intro: None,
             less_motion: Arc::new(AtomicBool::new(false)),
             slots: Vec::new(),
-            code_offered: false,
             logo: None,
             settings_open: false,
             state,
@@ -307,7 +304,9 @@ impl App {
             .package(&self.env.platform)
             .is_some_and(|p| crate::can_install(p, code.as_ref()));
         if !can {
-            self.editing_code = true;
+            // An old version published only for testers with a code (before every app was
+            // open): there is no code screen any more.
+            self.set_status(tx("janela-versao_so_com_codigo").to_string(), true);
             return;
         }
         let task = Task::new(
@@ -460,14 +459,6 @@ impl App {
                 self.save_state();
                 self.offline = false;
                 self.manifest = Some(m);
-                // No code yet and something needs one: offer the code screen once.
-                if self.state.code.is_none()
-                    && !self.code_offered
-                    && catalogo::needs_code(&self.items())
-                {
-                    self.code_offered = true;
-                    self.editing_code = true;
-                }
                 if !self.status_is_error {
                     self.set_status(tx("janela-lista_de_versoes_atualizada"), false);
                 }
@@ -806,60 +797,6 @@ impl App {
         if resp.clicked() {
             self.settings_open = true;
         }
-
-        // Who is testing: a chip that opens the code screen.
-        let code = self.code();
-        let text = match &code {
-            Some(c) => fx("janela-testador", &[("codigo", vx(&c.id().to_uppercase()))]),
-            None => tx("janela-sem_codigo_de_testador").to_string(),
-        };
-        let g = p.layout_job(familia::espacado(
-            &text,
-            familia::mono(10.5),
-            paleta().texto_fraco,
-            1.6,
-        ));
-        let chip = Rect::from_min_size(
-            pos2(gear.left() - 16.0 - g.size().x - 24.0, r.center().y - 14.0),
-            vec2(g.size().x + 24.0, 28.0),
-        );
-        if chip.left() > x + 200.0 {
-            let busy = self.busy();
-            let resp = ui
-                .allocate_rect(chip, if busy { Sense::hover() } else { Sense::click() })
-                .on_hover_text(if code.is_some() {
-                    tx("janela-trocar_o_codigo_de_testador")
-                } else {
-                    tx("janela-inserir_um_codigo_de_testador")
-                });
-            let fill = if resp.hovered() && !busy {
-                paleta().sobre
-            } else {
-                paleta().fundo
-            };
-            p.rect(
-                chip,
-                CornerRadius::same(14),
-                fill,
-                Stroke::new(1.0, paleta().linha),
-                StrokeKind::Inside,
-            );
-            let dot = pos2(chip.left() + 12.0, chip.center().y);
-            let on = if code.is_some() {
-                paleta().verde
-            } else {
-                paleta().texto_apagado
-            };
-            p.circle_filled(dot, 3.0, on);
-            p.galley(
-                pos2(chip.left() + 20.0, chip.center().y - g.size().y / 2.0),
-                g,
-                Color32::WHITE,
-            );
-            if resp.clicked() {
-                self.editing_code = true;
-            }
-        }
     }
 
     /// The texture of the official logo, loaded once.
@@ -916,22 +853,6 @@ impl App {
             ui.add_space(2.0);
         };
         let weak = |t: String| egui::RichText::new(t).color(paleta().texto_fraco);
-
-        section(ui, tx("janela-testador-2"));
-        let code = self.code();
-        ui.label(match &code {
-            Some(c) => fx("janela-codigo_de", &[("id", vx(&c.id()))]),
-            None => tx("janela-sem_codigo_so_os_aplicativos").into(),
-        });
-        let label = if code.is_some() {
-            tx("janela-trocar_codigo")
-        } else {
-            tx("janela-inserir_codigo")
-        };
-        if familia::botao(ui, label, Botao::Contorno, vec2(170.0, 30.0), !busy).clicked() {
-            self.editing_code = true;
-            self.settings_open = false;
-        }
 
         section(ui, tx("janela-instalacao"));
         let mut desktop = self.state.desktop_shortcuts;
@@ -1090,18 +1011,6 @@ impl App {
                         .clicked()
                     {
                         self.refresh(ui.ctx());
-                    }
-                    if self.state.code.is_none()
-                        && familia::botao(
-                            ui,
-                            tx("janela-inserir_codigo"),
-                            Botao::Contorno,
-                            vec2(200.0, 34.0),
-                            true,
-                        )
-                        .clicked()
-                    {
-                        self.editing_code = true;
                     }
                 });
             });
@@ -1740,10 +1649,12 @@ impl App {
                 ),
                 Status::Installed { .. } => (tx("janela-abrir").to_string(), Botao::Contorno, true),
                 Status::NotInstalled => (tx("janela-instalar").to_string(), Botao::Primario, !busy),
+                // Only versions published for testers with a code, from before every app
+                // was open: nothing to do here.
                 Status::NoAccess => (
-                    tx("janela-inserir_codigo").to_string(),
+                    tx("janela-indisponivel").to_string(),
                     Botao::Contorno,
-                    !busy,
+                    false,
                 ),
                 Status::NoPackage => (
                     tx("janela-indisponivel").to_string(),
@@ -1770,8 +1681,7 @@ impl App {
                         }
                     }
                     Status::Installed { .. } => self.launch(&item.id, &item.name),
-                    Status::NoAccess => self.editing_code = true,
-                    Status::NoPackage => {}
+                    Status::NoAccess | Status::NoPackage => {}
                 }
             }
         }
@@ -1822,22 +1732,6 @@ impl App {
             open_folder(&layout.product(&item.id));
             ui.close();
         }
-        ui.separator();
-        familia::rotulo(ui, tx("janela-canal"), 10.5, paleta().texto_apagado);
-        let mut channels = product.channels();
-        for c in [manifest::STABLE, manifest::TESTING] {
-            if !channels.iter().any(|x| x == c) {
-                channels.push(c.to_string());
-            }
-        }
-        let mut channel = item.channel.clone();
-        for c in &channels {
-            ui.selectable_value(&mut channel, c.clone(), channel_name(c));
-        }
-        if channel != item.channel {
-            self.state.channels.insert(item.id.clone(), channel.clone());
-            self.save_state();
-        }
         let installed = install::installed_versions(&layout, &item.id);
         // Removing and uninstalling come before the versions, so they stay in reach however
         // many versions there are.
@@ -1878,7 +1772,7 @@ impl App {
         }
         ui.separator();
         familia::rotulo(ui, tx("janela-versoes"), 10.5, paleta().texto_apagado);
-        let releases = product.visible(&channel);
+        let releases = product.visible(&item.channel);
         let ctx = MenuVersions {
             item,
             installed: &installed,
@@ -1912,11 +1806,8 @@ impl App {
         let is_installed = m.installed.contains(&r.version);
         let pkg = r.package(m.platform);
         let can = pkg.is_some_and(|p| crate::can_install(p, m.code));
-        let tag = if r.channel != manifest::STABLE {
-            format!(" · {}", channel_name(&r.channel))
-        } else {
-            String::new()
-        };
+        // No channels since 0.4.0: a version is just its number.
+        let tag = String::new();
         if is_active {
             ui.add_enabled(
                 false,
@@ -2299,12 +2190,7 @@ impl App {
                             for r in visible {
                                 let date = catalogo::date_text(&r.published_at).unwrap_or_default();
                                 ui.label(familia::espacado(
-                                    &format!(
-                                        "{}  {}  {}",
-                                        r.version,
-                                        channel_name(&r.channel).to_uppercase(),
-                                        date.to_uppercase()
-                                    ),
+                                    &format!("{}  {}", r.version, date.to_uppercase()),
                                     familia::mono(11.5),
                                     accent(&item),
                                     1.2,
@@ -2602,14 +2488,6 @@ fn sort_label(s: SortOrder) -> &'static str {
         SortOrder::Name => tx("janela-ordem_nome"),
         SortOrder::Recent => tx("janela-ordem_recentes"),
         SortOrder::Updates => tx("janela-ordem_atualizacao"),
-    }
-}
-
-fn channel_name(c: &str) -> String {
-    match c {
-        manifest::STABLE => tx("janela-canal_estavel").into(),
-        manifest::TESTING => tx("janela-canal_testes").into(),
-        other => other.into(),
     }
 }
 

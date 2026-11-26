@@ -267,17 +267,10 @@ pub fn install_release(
 /// Version of this launcher.
 pub const VERSAO: &str = env!("CARGO_PKG_VERSION");
 
-/// Channel this launcher follows for its own updates: the one chosen for it, else the test
-/// channel when the tester follows it in some app, else the stable one.
-pub fn launcher_channel(state: &LauncherState) -> &str {
-    if let Some(c) = state.channels.get(manifest::LAUNCHER) {
-        return c;
-    }
-    if state.channels.values().any(|c| c == manifest::TESTING) {
-        manifest::TESTING
-    } else {
-        manifest::STABLE
-    }
+/// Releases this launcher looks at for its own updates: all of them (no channels since
+/// 0.4.0; see [`manifest::ALL`]).
+pub fn launcher_channel(_state: &LauncherState) -> &str {
+    manifest::ALL
 }
 
 /// The newer launcher this one can install, if any. Never for a development launcher (no
