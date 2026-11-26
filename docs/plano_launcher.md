@@ -27,14 +27,13 @@ Restrições do dono:
  └──────────────────────────────┘               └──────────────────────┘          └──────────────────────────────┘
 ```
 
-Três crates, fora dos `default-members` do workspace (não pesam o build do simulador):
+Três crates (o antigo `utsim-admin` foi removido em 26/11/2026), fora dos `default-members` do workspace (não pesam o build do simulador):
 
 | Crate | Papel | Dependências principais |
 |---|---|---|
 | `crates/utsim-launcher-core` | Biblioteca pura e testada: manifesto, assinatura, códigos, cifra, download com retomada, página do Drive, instalação, atalhos, relato | `ed25519-dalek 2.2.0`, `chacha20poly1305 0.10.1`, `argon2 0.5.3`, `sha2 0.10.9`, `ureq 2.12.1` (rustls), `zip 2.6.1` |
 | `crates/utsim-publicar` | Ferramenta de linha de comando do autor; só escreve arquivos locais | núcleo, `clap` |
 | `crates/utsim-launcher` | O aplicativo com janela (eframe 0.36, renderizador glow, sem wgpu) | núcleo, `eframe`, `utsim-ui-tema` (recurso `familia`) |
-| `crates/utsim-admin` | Janela do autor sobre a `utsim-publicar` (seção 12); nunca vai para os testadores | `utsim-publicar`, `eframe`, `utsim-ui-tema` |
 
 As versões das crates de criptografia estão fixadas com `=`; trocar uma delas é uma mudança
 revisada. Todas são do projeto RustCrypto ou do dalek-cryptography, as mais usadas em Rust.
@@ -239,8 +238,7 @@ caminhos que saiam da pasta (`..`, absolutos); conferência de que o executável
 
 Uma vez:
 
-1. `cargo build --release -p utsim-publicar -p utsim-admin` (a linha de comando e a janela do
-   administrador, `target\release\utsim-admin.exe`; seção 12).
+1. `cargo build --release -p utsim-publicar` (a linha de comando).
 2. `utsim-publicar chaves gerar`. A privada vai para `%APPDATA%\UTSim\chaves\privada.txt`; a
    ferramenta recusa uma pasta de dados dentro de um repositório git e recusa sobrescrever uma
    chave existente. Faça uma cópia da privada num pendrive ou gerenciador de senhas.
@@ -352,8 +350,8 @@ O manual do testador está em `docs/manual/src/launcher.md`.
   recusado, pacote alterado rejeitado antes de extrair (o SHA-256 é calculado na mesma leitura que decifra); falta de espaço em disco avisada antes de baixar e antes de extrair;
 - relato de erro e registro; atalhos (texto do PowerShell e do `.desktop`).
 
-A janela do launcher (`janela.rs`) e a do administrador são desenhadas sem tela nos testes
-(`crates/utsim-launcher/tests/janela.rs`, `crates/utsim-admin/tests/telas.rs`): grade e lista
+A janela do launcher (`janela.rs`) é desenhada sem tela nos testes
+(`crates/utsim-launcher/tests/janela.rs`): grade e lista
 com 0, 1 e vários produtos em todos os estados, tela do código, download em andamento, notas,
 confirmação de desinstalar, a animação de abertura em vários instantes e cada tela do
 administrador. Com `UTSIM_CAPTURAS=<pasta>` cada caso também vira um PNG, pintado em software
@@ -434,26 +432,11 @@ uma vez por abertura; a opção "Mostrar animação de abertura" desliga; `--sem
 `MinAnimate` = 0 que essa opção grava), ela não toca. A busca da lista começa no primeiro
 quadro, antes da animação.
 
-## 12. Administrador (`utsim-admin`)
+## 12. Administrador (removido)
 
-Janela do autor sobre a biblioteca `utsim-publicar`, na mesma linguagem visual do launcher.
-Gerada com `cargo build --release -p utsim-admin` (`target\release\utsim-admin.exe`); não
-entra no instalador do launcher nem vai para os testadores. Usa a mesma pasta de dados da linha
-de comando (`%APPDATA%\UTSim`, ou `--dados`/`UTSIM_PUBLICAR_DADOS`) e uma pasta de publicação
-escolhida na janela, lembrada em `<dados>/publicar/admin.json` (a primeira sugestão é
-`G:\Meu Drive\UTSim - testes`). Sem a chave privada, a janela só explica como criá-la
-(`utsim-publicar chaves gerar`); ela nunca cria nem mostra a privada.
-
-- **Testadores**: nome, id, canais, situação e data; "Adicionar" mostra o código uma vez, com
-  "Copiar" e o aviso de enviar só para a pessoa; "Canais" edita a lista
-  (`Store::set_channels`); "Revogar" e "Reativar".
-- **Publicações**: produtos, versões, canal e, por pacote, tamanho, link (ok ou ausente),
-  "aberto para todos" e quem tem acesso; "Verificar" (o mesmo relatório de
-  `utsim-publicar verificar`); "Refazer acesso" (`reembrulhar`, numa linha de execução à parte,
-  pois cada embrulho custa um Argon2id).
-- **Acesso**: por produto e canal, "Com código" ou "Aberto para todos", sempre com confirmação
-  e o aviso da seção 13.
-- **Chaves**: chave pública (com "Copiar") e o id; caminhos dos arquivos.
+A janela do administrador (`utsim-admin`) foi removida em 26/11/2026: desde então todos os apps
+são abertos, sem testadores nem códigos. O que ela fazia continua na linha de comando
+`utsim-publicar`.
 
 ## 13. Acesso aberto para todos
 

@@ -103,6 +103,4 @@ manifesto que garante que o pacote veio do autor. Não há mais canais nem códi
    [utsim-launcher](https://github.com/JandreiSS/utsim-launcher).
 
 A chave privada fica só em `%APPDATA%\UTSim\chaves` (crie uma vez com
-`utsim-publicar chaves gerar`). O **UTSim Admin** (`cargo build --release -p utsim-admin`)
-continua como ferramenta opcional do autor, para ver as publicações e as chaves; os testadores
-e o acesso por canal que ele mostra só valem para versões antigas.
+`utsim-publicar chaves gerar`).
