@@ -14,7 +14,7 @@ name = "utsim-publicar"
 path = "src/main.rs"
 
 [dependencies]
-utsim-launcher-core = { path = "../utsim-launcher-core" }
+utsim-launcher-core = { workspace = true }
 clap.workspace = true
 base64 = "=0.22.1"
 serde.workspace = true
