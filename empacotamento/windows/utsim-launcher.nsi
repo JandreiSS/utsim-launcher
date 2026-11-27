@@ -5,7 +5,7 @@
 ;
 ; Atualização pelo próprio launcher: ele roda este instalador com "/S /reabrir". /S é o modo
 ; silencioso do NSIS (a mesma pasta, lida do registro); /reabrir abre o launcher novo no fim.
-; Só a pasta do programa é sobrescrita: aplicativos, estado e código de acesso ficam em
+; Só a pasta do programa é sobrescrita: aplicativos e estado ficam em
 ; %LOCALAPPDATA%\UTSim\launcher e não são tocados.
 ; Compilar com scripts/instalador-launcher.sh, que chama:
 ;   makensis /DVERSAO=0.1.0 /DEXE=<utsim-launcher.exe> /DICONE=<launcher.ico> /DSAIDA=<instalador.exe> utsim-launcher.nsi
@@ -42,7 +42,7 @@ BrandingText "UTSim Launcher ${VERSAO}"
 !define MUI_ICON "${ICONE}"
 !define MUI_UNICON "${ICONE}"
 !define MUI_ABORTWARNING
-!define MUI_WELCOMEPAGE_TEXT "Este assistente instala o UTSim Launcher, que baixa, instala e atualiza os aplicativos da família UTSim.$\r$\n$\r$\nTenha à mão o código de acesso que você recebeu do autor.$\r$\n$\r$\nNão é preciso ser administrador."
+!define MUI_WELCOMEPAGE_TEXT "Este assistente instala o UTSim Launcher, que baixa, instala e atualiza os aplicativos da família UTSim.$\r$\n$\r$\nNão é preciso ser administrador."
 !define MUI_FINISHPAGE_RUN "$INSTDIR\utsim-launcher.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "Abrir o UTSim Launcher agora"
 

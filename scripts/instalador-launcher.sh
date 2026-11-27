@@ -63,7 +63,7 @@ ARQUIVO="utsim-launcher-v${ROTULO}-windows-x64-instalador.exe"
 
 nativo() { if command -v cygpath >/dev/null 2>&1; then cygpath -w "$1"; else echo "$1"; fi; }
 
-MSYS2_ARG_CONV_EXCL='*' "$MAKENSIS" -V2 \
+MSYS2_ARG_CONV_EXCL='*' "$MAKENSIS" -V2 -INPUTCHARSET UTF8 \
     "-DVERSAO=$VERSAO" \
     "-DEXE=$(nativo "$PWD/$EXE")" \
     "-DICONE=$(nativo "$PWD/assets/icone/familia/launcher.ico")" \
